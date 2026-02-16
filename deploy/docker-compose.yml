@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  # YOUR APP
+  app:
+    build: ..   # Build from root folder
+    container_name: cloudvault_app
+    ports:
+      - "3000:3000"
+    env_file:
+      - ../.env
+    environment:
+      - DB_HOST=postgres
+      - REDIS_HOST=redis
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ../uploads:/usr/src/app/uploads # Bind Mount for Cache
+
+  # 1. Redis (Cache for S3 Keys)
+  redis:
+    image: redis:alpine
+    container_name: cloudvault_redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+
+  # 2. PostgreSQL (File Metadata)
+  postgres:
+    image: postgres:15-alpine
+    container_name: cloudvault_db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: cloudvault
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
