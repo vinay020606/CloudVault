@@ -136,7 +136,7 @@ LRU Eviction Service: A background watcher. If src/uploads/ exceeds 100MB, it as
 
 SQS Listener (The Ear): A background worker in server.js. It constantly listens to AWS. If you delete a file in the S3 Console, SQS shouts "Invalidate!", and the worker deletes the local copy.
 
-3. The "Secret Sauce" (Why it's Senior Level)
+
 Non-Blocking I/O: Using streams instead of fs.readFile means you can upload a 10GB video with only 50MB of RAM.
 
 Event-Driven Consistency: Using SQS means your local cache is never "stale" (outdated).
