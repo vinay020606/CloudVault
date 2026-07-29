@@ -8,10 +8,6 @@
 
 ---
 
-> 📖 **Architecture & Deep Dive Documentation:** For sequence diagrams, execution flows, and security matrix details, see [ARCHITECTURE.md](ARCHITECTURE.md).
-
----
-
 ## 📌 What is CloudVault?
 
 **CloudVault** is a high-performance **Storage Gateway & Reverse Proxy** that sits between your client applications and **AWS S3**.
@@ -32,6 +28,80 @@ CloudVault operates as a **Reverse Storage Proxy** for AWS S3:
    - **Upload (`PUT` / `POST`):** Client streams file to `http://gateway:3000/proxy/tenant_101/docs/report.pdf`. CloudVault validates security, writes to local cache, records MySQL metadata, and pipes data in the background to AWS S3 (`tenants/tenant_101/docs/report.pdf`).
    - **Download (`GET`):** Client requests `http://gateway:3000/proxy/tenant_101/docs/report.pdf`. CloudVault checks local SSD storage. If present, it returns HTTP 200 with `X-Cache-Status: CACHE_HIT`. If missing, it fetches from S3 via Singleflight, caches locally, and returns `X-Cache-Status: CACHE_MISS_S3_FETCH`.
    - **Delete (`DELETE`):** Client sends `DELETE /proxy/tenant_101/docs/report.pdf`. CloudVault removes the file from local SSD, MySQL metadata, and Redis LRU tracking.
+
+---
+
+## 🏛️ End-to-End System Architecture & Workflows
+
+### 📥 1. Upload Sequence Workflow (`POST /upload` or `PUT /proxy/:tenantId/*`)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client
+    participant Proxy as Gateway Proxy
+    participant Sanitizer as Path Sanitizer
+    participant Disk as Local SSD Cache
+    participant MySQL as MySQL 8.0
+    participant S3 as AWS S3
+    participant Redis as Redis LRU
+
+    Client->>Proxy: Upload Request (Headers: x-tenant-id)
+    Proxy->>Sanitizer: resolveTenantPath(tenantId, filePath)
+    Sanitizer-->>Proxy: Validated Absolute Path (or throws SecurityError)
+    Proxy->>Disk: Stream incoming bytes to ./storage/tenants/tenantId/path
+    Disk-->>Proxy: Write completed (stat.size)
+    Proxy->>MySQL: Insert/Update record (tenant_id, file_path, size_bytes, s3_key)
+    Proxy-->>S3: Queue background pipe (tenants/tenantId/path)
+    Proxy->>Redis: ZADD cloudvault:lru_files timestamp tenantId:filePath
+    Proxy-->>Client: HTTP 201 Created (File Metadata)
+```
+
+1. **Request Intake:** Client sends file via `POST /api/v1/gateway/upload` or transparent `PUT /proxy/:tenantId/path/to/file`.
+2. **Security & Boundary Validation:** `resolveTenantPath(tenantId, userRequestedPath)` resolves the absolute path and verifies it strictly resides under `./storage/tenants/<tenantId>/`. Throws `SecurityError` (HTTP 403) on path traversal (`../`) attempts.
+3. **Local Write-Through Stream:** Incoming HTTP request body streams directly into target local storage path using Node.js `stream/promises` `pipeline`.
+4. **Metadata Recording:** Inserts/updates file record in MySQL `files` table (`tenant_id`, `file_path`, `file_name`, `size_bytes`, `s3_key`).
+5. **Background S3 Sync:** Non-blocking background worker pipes file to S3 (`uploadFileToS3`).
+6. **LRU Scoring:** Calls `touchFile(redis, `${tenantId}:${filePath}`)` to set Redis ZSET score to `Date.now()`.
+
+---
+
+### 📤 2. Download Sequence Workflow (`GET /download` or `GET /proxy/:tenantId/*`)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client
+    participant Proxy as Gateway Proxy
+    participant Disk as Local SSD Cache
+    participant Singleflight as Singleflight Coalescer
+    participant S3 as AWS S3
+    participant Redis as Redis LRU
+
+    Client->>Proxy: Download Request (tenantId, filePath)
+    Proxy->>Disk: Check if ./storage/tenants/tenantId/path exists
+    alt Cache Hit
+        Disk-->>Proxy: Local File Found
+        Proxy->>Redis: Touch LRU score (ZADD)
+        Proxy-->>Client: Stream bytes (HTTP 200/206, X-Cache-Status: CACHE_HIT)
+    else Cache Miss
+        Proxy->>Singleflight: execute(tenantId:filePath, fetchFn)
+        Singleflight->>S3: Download object from tenants/tenantId/path
+        S3-->>Singleflight: Buffer Data
+        Singleflight->>Disk: Write to local disk cache
+        Singleflight->>Redis: Touch LRU score (ZADD)
+        Singleflight-->>Proxy: Return Buffer
+        Proxy-->>Client: Stream bytes (HTTP 200/206, X-Cache-Status: CACHE_MISS_S3_FETCH)
+    end
+```
+
+1. **Cache Inspection:** Proxy checks local SSD disk for `./storage/tenants/<tenantId>/<filePath>`.
+2. **Cache Hit Path (3.8ms):**
+   - File exists locally. Proxy updates Redis LRU score and streams bytes directly back to client with HTTP 200/206 and `X-Cache-Status: CACHE_HIT`.
+3. **Cache Miss Path (Singleflight S3 Fetch):**
+   - File missing locally. Request joins `singleflightExecute(`${tenantId}:${filePath}`, fetchFn)`.
+   - If 20 concurrent requests arrive simultaneously for the missing file, **only 1 S3 download request** executes.
+   - S3 buffer is written to local SSD disk, indexed in Redis LRU, and returned to all waiting requests.
 
 ---
 
@@ -92,15 +162,14 @@ This maintains a real-time list of all cached files, ordered strictly from **old
 CloudVault includes a background interval worker `startEvictionWatcher()` that continuously monitors local SSD disk usage to prevent disk space exhaustion.
 
 ```mermaid
-graph TD;
-    Start[Eviction Watcher Interval - Every 10s]-->Calc[1. Calculate Total Local Folder Size ./storage/tenants/];
-    Calc-->Check{Folder Size > MAX_CACHE_SIZE?};
-    Check-- No -->End[Sleep / Wait for Next Interval];
-    Check-- Yes (Over Budget) -->Fetch[2. Query Redis: ZRANGE cloudvault:lru_files 0 0];
-    Fetch-->Identify[Oldest Unaccessed File Key Identified];
-    Identify-->DeleteDisk[3. Delete Physical File from Local SSD Disk];
-    DeleteDisk-->RemoveRedis[4. Remove File Key from Redis ZREM cloudvault:lru_files fileKey];
-    RemoveRedis-->Check;
+flowchart TD
+    A[Eviction Watcher Interval] --> B[Calculate Total Folder Size ./storage/tenants/]
+    B --> C{Used Size > MAX_CACHE_SIZE?}
+    C -- No --> D[Sleep 10s]
+    C -- Yes --> E[Fetch Oldest File: ZRANGE cloudvault:lru_files 0 0]
+    E --> F[Unlink Physical Disk File: fs.promises.unlink]
+    F --> G[Remove Index Key: ZREM cloudvault:lru_files fileKey]
+    G --> B
 ```
 
 ### Detailed Eviction Step-by-Step:
@@ -124,17 +193,14 @@ graph TD;
 
 ---
 
-## 🛡️ Multi-Tenant Security & Path Traversal Prevention
+## 🔒 Multi-Tenant Security Matrix
 
-CloudVault uses a native sanitization utility `resolveTenantPath(tenantId, filePath)` to enforce strict multi-tenant boundary isolation:
-
-```javascript
-// Validates path stays inside ./storage/tenants/<tenantId>/
-const targetLocalPath = resolveTenantPath(tenantId, userRequestedPath);
-```
-
-- **Allowed:** `resolveTenantPath('tenant_101', 'documents/notes.txt')` $\rightarrow$ `./storage/tenants/tenant_101/documents/notes.txt`
-- **Blocked Attack:** `resolveTenantPath('tenant_101', '../tenant_202/secret.txt')` $\rightarrow$ Throws `SecurityError` (**HTTP 403 Forbidden**).
+| Threat Vector | Defense Mechanism | Implementation |
+| :--- | :--- | :--- |
+| **Path Traversal (`../`)** | Path Sanitizer | `resolveTenantPath` with `path.normalize` & `path.resolve` check. |
+| **Cross-Tenant Data Read** | Database Partitioning | MySQL metadata queries strictly filter `WHERE tenant_id = ?`. |
+| **S3 Credential Leakage** | Reverse Proxy Shielding | AWS credentials remain server-side; S3 bucket is 100% private. |
+| **Thundering Herd Overload** | Request Coalescing | `singleflightService` merges concurrent S3 requests. |
 
 ---
 
