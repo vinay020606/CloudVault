@@ -7,6 +7,9 @@ dotenv.config();
  * Parses and validates system configuration settings from environment variables.
  */
 function loadConfiguration() {
+  const hotBucket = process.env.HOT_BUCKET || process.env.S3_BUCKET_NAME || 'cloudvault-hot-standard';
+  const coldBucket = process.env.COLD_BUCKET || 'cloudvault-cold-glacier';
+
   const config = {
     port: parseInt(process.env.PORT || '3000', 10),
     mysql: {
@@ -29,8 +32,13 @@ function loadConfiguration() {
       region: process.env.AWS_REGION || 'us-east-1',
       accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'mock_access_key',
       secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'mock_secret_key',
-      bucketName: process.env.S3_BUCKET_NAME || 'cloudvault-storage-bucket',
+      bucketName: hotBucket,
+      hotBucket: hotBucket,
+      coldBucket: coldBucket,
       endpoint: process.env.S3_ENDPOINT || undefined,
+    },
+    tiering: {
+      inactivityDays: parseInt(process.env.TIERING_INACTIVITY_DAYS || '30', 10),
     },
   };
 

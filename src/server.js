@@ -48,6 +48,9 @@ async function startServer() {
     intervalMs: 30000, // Runs every 30 seconds
   });
 
+  // Start background Intelligent Storage Tiering Worker
+  startTieringCron(86400000); // Nightly scan every 24 hours
+
   const PORT = config.port;
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`✅ CloudVault Gateway listening at http://localhost:${PORT}`);

@@ -5,10 +5,10 @@ import path from 'path';
 import { pipeline } from 'stream/promises';
 import config from '../config/index.js';
 import { resolveTenantPath, SecurityError } from '../utils/pathSanitizer.js';
-import { createFileRecord, getFileMetadata } from '../services/metadataService.js';
+import { createFileRecord, getFileMetadata, touchFileAccess } from '../services/metadataService.js';
 import { execute as singleflightExecute } from '../services/singleflightService.js';
 import { touchFile } from '../services/evictionService.js';
-import { uploadFileToS3, downloadFileFromS3 } from '../services/s3Service.js';
+import { uploadFileToS3, downloadFileFromS3, restoreGlacierObject } from '../services/s3Service.js';
 import { getRedisClient } from '../db/redis.js';
 
 const router = express.Router();
@@ -52,8 +52,8 @@ router.post('/upload', async (req, res) => {
         s3Key
       );
 
-      // 4. Queue background upload to S3
-      uploadFileToS3(s3Key, targetLocalPath).catch((err) => {
+      // 4. Queue background upload to S3 Hot Bucket
+      uploadFileToS3(s3Key, targetLocalPath, config.s3.hotBucket).catch((err) => {
         console.warn(`[Background S3 Upload Failed] ${s3Key}:`, err.message);
       });
 
@@ -134,8 +134,8 @@ router.post('/upload', async (req, res) => {
           s3Key
         );
 
-        // 4. Queue background pipe to S3
-        uploadFileToS3(s3Key, targetLocalPath).catch((err) => {
+        // 4. Queue background pipe to S3 Hot Bucket
+        uploadFileToS3(s3Key, targetLocalPath, config.s3.hotBucket).catch((err) => {
           console.warn(`[Background S3 Sync Error] ${s3Key}:`, err.message);
         });
 
@@ -192,6 +192,9 @@ router.get('/download', async (req, res) => {
       return res.status(404).json({ error: 'File not found' });
     }
 
+    // Touch access metrics
+    touchFileAccess(tenantId, userRequestedPath).catch(() => {});
+
     const redis = getRedisClient();
     const fileKey = `${tenantId}:${userRequestedPath}`;
     let fileBuffer = null;
@@ -206,14 +209,25 @@ router.get('/download', async (req, res) => {
     }
 
     if (localExists) {
-      // Cache Hit!
+      // Cache Hit! Serve immediately regardless of cloud tier (~3.8ms)
       fileBuffer = await fs.promises.readFile(targetLocalPath);
       touchFile(redis, fileKey).catch(() => {});
     } else {
-      // Cache Miss! Fetch via Singleflight Service from S3
-      console.log(`[Cache Miss] File ${fileKey} missing locally. Fetching via Singleflight from S3...`);
+      // Cache Miss: Check Storage Tier (HOT vs COLD)
+      if (metadata.currentTier === 'COLD') {
+        // Trigger Glacier Restore Job
+        restoreGlacierObject(metadata.s3Key, config.s3.coldBucket).catch(() => {});
+        return res.status(202).json({
+          status: 'archived',
+          message: 'File is being restored from Glacier cold storage. Available in local cache within 3-5 hours.',
+          s3Key: metadata.s3Key,
+        });
+      }
+
+      // Cache Miss & Tier == 'HOT': Fetch from S3 Hot Bucket
+      console.log(`[Cache Miss] File ${fileKey} missing locally. Fetching via Singleflight from S3 Hot Bucket...`);
       fileBuffer = await singleflightExecute(fileKey, async () => {
-        const s3Data = await downloadFileFromS3(metadata.s3Key);
+        const s3Data = await downloadFileFromS3(metadata.s3Key, config.s3.hotBucket);
         await fs.promises.mkdir(path.dirname(targetLocalPath), { recursive: true });
         await fs.promises.writeFile(targetLocalPath, s3Data);
         touchFile(redis, fileKey).catch(() => {});
