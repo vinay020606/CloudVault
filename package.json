@@ -5,7 +5,7 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node tests/pathSanitizer.test.js && node tests/storage.test.js && node tests/singleflight.test.js && node tests/eviction.test.js && node tests/proxy.test.js",
+    "test": "node tests/pathSanitizer.test.js && node tests/storage.test.js && node tests/singleflight.test.js && node tests/eviction.test.js && node tests/proxy.test.js && node tests/health.test.js",
     "benchmark": "node scripts/benchmark.js"
   },
   "keywords": [],

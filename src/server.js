@@ -9,6 +9,7 @@ import { getRedisClient } from './db/redis.js';
 import { startEvictionWatcher } from './services/evictionService.js';
 import gatewayRoutes from './routes/gateway.js';
 import proxyRoutes from './routes/proxy.js';
+import healthRoutes from './routes/health.js';
 import requestLogger from './middleware/requestLogger.js';
 
 const app = express();
@@ -22,14 +23,10 @@ app.use(requestLogger);
 // Serve static frontend files if any exist
 app.use(express.static('public'));
 
-// Gateway & Storage Proxy Routes
+// Gateway, Proxy, and Health Routes
 app.use('/api/v1/gateway', gatewayRoutes);
 app.use('/proxy', proxyRoutes);
-
-// Health Check
-app.get('/health', (req, res) => {
-  res.json({ status: 'online', service: 'CloudVault Gateway', timestamp: new Date().toISOString() });
-});
+app.use('/health', healthRoutes);
 
 async function startServer() {
   console.log('🚀 Starting CloudVault Gateway Server...');
