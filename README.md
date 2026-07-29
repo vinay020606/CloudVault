@@ -171,27 +171,76 @@ CREATE TABLE IF NOT EXISTS files (
 
 ---
 
-## 📊 Observability & Performance Benchmarks
+## 📡 Complete Gateway & Proxy API Reference
 
-### Health & System Metrics Endpoint (`GET /health/metrics`)
-Returns real-time infrastructure state:
-```json
-{
-  "status": "healthy",
-  "timestamp": "2026-07-29T23:20:00.000Z",
-  "services": {
-    "mysql": { "status": "connected", "poolLimit": 10 },
-    "redis": { "status": "connected" }
-  },
-  "storage": {
-    "maxCacheSizeBytes": 104857600,
-    "usedSizeBytes": 12582912,
-    "cachedFilesCount": 3
-  }
-}
+### 1. Transparent Storage Proxy Endpoints (`/proxy/*`)
+
+| Method | Endpoint Path | Headers | Description | Expected Status |
+| :--- | :--- | :--- | :--- | :--- |
+| `PUT` / `POST` | `/proxy/:tenantId/*` | Optional headers | Uploads file through proxy to local SSD & Hot S3 Bucket. | `201 Created` |
+| `GET` | `/proxy/:tenantId/*` | Range (Optional) | Downloads file. Serves from SSD cache or singleflights from S3. | `200 OK` / `206` / `202` |
+| `DELETE` | `/proxy/:tenantId/*` | None | Deletes file from local SSD, MySQL metadata, and Redis LRU. | `200 OK` |
+
+### 2. Standard Gateway API Endpoints (`/api/v1/gateway/*`)
+
+| Method | Endpoint Path | Headers | Description | Expected Status |
+| :--- | :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/gateway/upload` | `x-tenant-id` | Form-data / Stream file upload endpoint. | `201 Created` |
+| `GET` | `/api/v1/gateway/download` | `x-tenant-id`, `filePath` | Downloads tenant file with cache hit/miss routing. | `200 OK` / `206` / `202` |
+
+---
+
+## 🚀 Quick Start, Testing & Performance Benchmarks
+
+### 1. Environment Configuration (`.env`)
+Copy `.env.example` to create your local environment setup:
+```bash
+cp .env.example .env
 ```
 
-### Latency Benchmark Output (`npm run benchmark`)
+**Configuration Template (`.env.example`):**
+```env
+PORT=3000
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=root
+MYSQL_DATABASE=cloudvault
+
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+TENANTS_STORAGE_DIR=./storage/tenants
+MAX_CACHE_SIZE_BYTES=104857600 # 100MB Cache Limit
+
+AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=your_access_key
+AWS_SECRET_ACCESS_KEY=your_secret_key
+S3_BUCKET_NAME=cloudvault-hot-standard
+HOT_BUCKET=cloudvault-hot-standard
+COLD_BUCKET=cloudvault-cold-glacier
+TIERING_INACTIVITY_DAYS=30
+```
+
+### 2. Run Gateway with Docker Compose
+Run MySQL 8.0, Redis Alpine, and the Node.js application container:
+```bash
+docker-compose up --build -d
+```
+
+### 3. Run Automated Unit Test Suite
+Run the 7 automated unit test suites verifying all security, caching, singleflight, and eviction mechanics:
+```bash
+npm test
+```
+
+### 4. Run Performance & Latency Benchmark
+Run the performance benchmark tool to measure Cache Miss vs Cache Hit latency:
+```bash
+npm run benchmark
+```
+
+**Sample Benchmark Output:**
 ```text
 ======================================================
 📊 BENCHMARK RESULTS SUMMARY
@@ -200,36 +249,6 @@ Returns real-time infrastructure state:
 🚀 Second Download (Local Cache Hit):   3.86 ms
 ⚡ Speed Improvement:                   48.4x FASTER!
 ======================================================
-```
-
----
-
-## 🚀 Quick Start & Deployment
-
-### 1. Environment Setup (`.env`)
-```bash
-cp .env.example .env
-```
-
-### 2. Run Gateway with Docker Compose
-```bash
-docker-compose up --build -d
-```
-
-### 3. Deploy Serverless AWS Lambda Function (AWS SAM)
-```bash
-sam build -t deploy/template.yaml
-sam deploy --guided
-```
-
-### 4. Run Automated Unit Tests
-```bash
-npm test
-```
-
-### 5. Run Performance Benchmark
-```bash
-npm run benchmark
 ```
 
 ---
