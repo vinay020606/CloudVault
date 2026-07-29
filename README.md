@@ -8,6 +8,10 @@
 
 ---
 
+> 📖 **Architecture & Deep Dive Documentation:** For sequence diagrams, execution flows, and security matrix details, see [ARCHITECTURE.md](ARCHITECTURE.md).
+
+---
+
 ## 📌 What is CloudVault?
 
 **CloudVault** is a high-performance **Storage Gateway & Reverse Proxy** that sits between your client applications and **AWS S3**.
