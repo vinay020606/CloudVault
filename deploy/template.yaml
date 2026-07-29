@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: CloudVault Intelligent Storage Tiering AWS Lambda Function & EventBridge Schedule
+
+Globals:
+  Function:
+    Timeout: 300
+    MemorySize: 512
+    Runtime: nodejs20.x
+    Environment:
+      Variables:
+        MYSQL_HOST: !Ref MySQLHost
+        MYSQL_USER: !Ref MySQLUser
+        MYSQL_PASSWORD: !Ref MySQLPassword
+        MYSQL_DATABASE: cloudvault
+        HOT_BUCKET: !Ref HotBucketName
+        COLD_BUCKET: !Ref ColdBucketName
+        TIERING_INACTIVITY_DAYS: "30"
+
+Parameters:
+  MySQLHost:
+    Type: String
+    Default: "cloudvault-db.mydb.us-east-1.rds.amazonaws.com"
+  MySQLUser:
+    Type: String
+    Default: "root"
+  MySQLPassword:
+    Type: String
+    NoEcho: true
+  HotBucketName:
+    Type: String
+    Default: "cloudvault-hot-standard"
+  ColdBucketName:
+    Type: String
+    Default: "cloudvault-cold-glacier"
+
+Resources:
+  TieringLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: CloudVault-Intelligent-Tiering
+      CodeUri: ../
+      Handler: src/lambda/tieringLambdaHandler.handler
+      Description: Nightly background worker migrating unaccessed stale files from S3 Hot Bucket to Glacier Cold Bucket.
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref HotBucketName
+        - S3CrudPolicy:
+            BucketName: !Ref ColdBucketName
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:CopyObject
+                - s3:DeleteObject
+                - s3:RestoreObject
+              Resource:
+                - !Sub "arn:aws:s3:::${HotBucketName}/*"
+                - !Sub "arn:aws:s3:::${ColdBucketName}/*"
+      Events:
+        NightlyEventBridgeCron:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 0 * * ? *)
+            Name: CloudVault-Nightly-Tiering-Schedule
+            Description: Triggers Intelligent Tiering Lambda nightly at 12:00 AM UTC.
+
+Outputs:
+  TieringLambdaArn:
+    Description: ARN of the Intelligent Storage Tiering AWS Lambda Function
+    Value: !GetAtt TieringLambdaFunction.Arn

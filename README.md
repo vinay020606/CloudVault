@@ -52,11 +52,21 @@ ADD COLUMN last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 ADD COLUMN access_count INT DEFAULT 1;
 ```
 
-#### Step B: Automated Tier Migration Background Worker (`src/workers/tieringWorker.js`)
-Nightly background worker scans for stale files unaccessed in 30 days:
-1. Copies object from Hot Bucket to Cold Glacier Bucket (`CopyObjectCommand` with `StorageClass: 'GLACIER'`).
-2. Deletes object from Hot Bucket (`DeleteObjectCommand`).
-3. Updates metadata in MySQL (`UPDATE files SET current_tier = 'COLD' WHERE id = ?`).
+#### Step B: AWS Lambda Function & Amazon EventBridge Schedule (`src/lambda/tieringLambdaHandler.js`)
+Nightly, an **Amazon EventBridge (CloudWatch Events)** schedule (`cron(0 0 * * ? *)`) triggers the standalone **AWS Lambda Function** ([src/lambda/tieringLambdaHandler.js](src/lambda/tieringLambdaHandler.js)):
+
+```mermaid
+graph TD;
+    EventBridge[Amazon EventBridge Schedule: cron 0 0 * * ? *]-->|Nightly Trigger| Lambda[AWS Lambda: CloudVault-Intelligent-Tiering];
+    Lambda-->|1. Select Stale Files| MySQL[(MySQL Database: last_accessed_at < 30 days)];
+    Lambda-->|2. CopyObject StorageClass: GLACIER| ColdBucket[Cold S3 Bucket: s3://vault-cold-glacier];
+    Lambda-->|3. DeleteObject| HotBucket[Hot S3 Bucket: s3://vault-hot-standard];
+    Lambda-->|4. Update Metadata current_tier = COLD| MySQL;
+```
+
+1. **Copy Object:** Copies object from Hot Bucket to Cold Glacier Bucket (`CopyObjectCommand` with `StorageClass: 'GLACIER'`).
+2. **Delete Object:** Deletes object from Hot Bucket (`DeleteObjectCommand`).
+3. **Update Metadata:** Updates record in MySQL (`UPDATE files SET current_tier = 'COLD' WHERE id = ?`).
 
 ### 3. Transparent Read Routing on Cold Requests
 
