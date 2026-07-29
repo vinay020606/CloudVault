@@ -21,6 +21,17 @@ Instead of client apps downloading files directly from S3 (which is slow and inc
 
 ---
 
+## 💡 What Problems Does CloudVault Solve?
+
+1. **⚡ Slow S3 Download Speeds:** Reduces file retrieval latency from **~200ms to ~3.8ms**.
+2. **💰 High Cloud Egress Charges:** Cuts AWS data download fees by caching popular files locally.
+3. **🛡️ Public S3 Exposure:** Keeps your AWS S3 bucket **100% private**. Clients never see S3 bucket URLs or AWS credentials.
+4. **🔒 Multi-Tenant Data Leakage:** Restricts each tenant's access strictly to their isolated directory (`./storage/tenants/<tenantId>/`) and blocks path traversal (`../`) security attacks.
+5. **🔥 Thundering Herd Problem:** If 50 users request the exact same missing file simultaneously, CloudVault downloads it from S3 **only ONCE** (Singleflight request coalescing) and streams it to all 50 users.
+6. **📉 S3 Storage Cost Optimization:** Automatically moves unaccessed files to S3 Glacier, saving up to 80% on long-term storage costs.
+
+---
+
 ## 🏗️ System Architecture
 
 ```mermaid
@@ -99,6 +110,10 @@ CloudVault operates as a **Reverse Storage Proxy** for AWS S3:
 
 ## 🗄️ Database Schema (MySQL 8.0)
 
+MySQL acts as the authoritative relational database storing file metadata, ownership, and S3 keys.
+
+### `files` Table DDL Statement
+
 ```sql
 CREATE TABLE IF NOT EXISTS files (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -115,17 +130,45 @@ CREATE TABLE IF NOT EXISTS files (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
+### Detailed Field Breakdown:
+
+| Column | Data Type | Purpose / Description |
+| :--- | :--- | :--- |
+| `id` | `INT` (Primary Key) | Unique incremental file ID. |
+| `tenant_id` | `VARCHAR(255)` | Identifies tenant owner (enforces multi-tenant metadata isolation). |
+| `file_path` | `VARCHAR(768)` | Logical file path requested by tenant (e.g. `documents/report.pdf`). |
+| `file_name` | `VARCHAR(255)` | Original filename (e.g. `report.pdf`). |
+| `size_bytes` | `BIGINT` | Total file size in bytes. |
+| `s3_key` | `VARCHAR(1024)` | Exact AWS S3 Object Key (e.g. `tenants/tenant_101/documents/report.pdf`). |
+| `current_tier` | `ENUM('HOT', 'COLD')` | Current cloud storage bucket location (`HOT` vs `COLD`). |
+| `last_accessed_at` | `TIMESTAMP` | Timestamp of last read/write access (used for tiering calculation). |
+| `access_count` | `INT` | Total cumulative download count. |
+| `created_at` | `TIMESTAMP` | Original upload timestamp. |
+
 ---
 
 ## ⚡ What Redis Stores & LRU Scoring
 
-- **Redis Key:** `cloudvault:lru_files` (Sorted Set `ZSET`)
-- **Member Format:** `${tenantId}:${filePath}`
+Redis is used for **high-speed in-memory indexing and LRU (Least Recently Used) tracking**.
+
+### Redis Data Structure: Sorted Set (`ZSET`)
+- **Redis Key:** `cloudvault:lru_files`
+- **Member Format:** `${tenantId}:${filePath}` (e.g. `tenant_101:documents/report.pdf`)
 - **Score:** Unix timestamp in milliseconds (`Date.now()`)
+
+### How Redis Tracks File Popularity:
+Whenever a file is **uploaded** or **downloaded**, CloudVault calls `touchFile(redis, fileKey)`:
+```javascript
+// Updates or inserts the file's score to the current timestamp
+await redis.zadd('cloudvault:lru_files', Date.now(), 'tenant_101:documents/report.pdf');
+```
+This maintains a real-time list of all cached files, ordered strictly from **oldest accessed (lowest score)** to **most recently accessed (highest score)**.
 
 ---
 
 ## 🧹 How Automatic Eviction Works (Redis LRU Watcher)
+
+CloudVault includes a background interval worker `startEvictionWatcher()` that continuously monitors local SSD disk usage to prevent disk space exhaustion.
 
 ```mermaid
 flowchart TD
@@ -137,6 +180,25 @@ flowchart TD
     F --> G[Remove Index Key: ZREM cloudvault:lru_files fileKey]
     G --> B
 ```
+
+### Detailed Eviction Step-by-Step:
+1. **Size Calculation:** Background worker measures total size of all files in `./storage/tenants/`.
+2. **Threshold Check:** If total size exceeds `MAX_CACHE_SIZE_BYTES` (e.g., 100MB):
+3. **Fetch Oldest File:** Queries Redis for the single oldest file score:
+   ```javascript
+   const oldest = await redis.zrange('cloudvault:lru_files', 0, 0);
+   // Returns: ['tenant_101:documents/old_report.pdf']
+   ```
+4. **Physical Disk Unlink:** Deletes the physical file from local SSD storage:
+   ```javascript
+   await fs.promises.unlink('./storage/tenants/tenant_101/documents/old_report.pdf');
+   ```
+5. **Remove Index:** Removes the key from Redis:
+   ```javascript
+   await redis.zrem('cloudvault:lru_files', 'tenant_101:documents/old_report.pdf');
+   ```
+6. **Loop Until Healthy:** Repeats until total folder size drops safely below the cache limit.
+7. **Transparent Recovery:** If an evicted file is requested by a user later, CloudVault detects a Cache Miss, fetches it from S3 via Singleflight, saves it back to local SSD, and re-indexes it in Redis!
 
 ---
 
@@ -154,8 +216,40 @@ flowchart TD
 ## 🚀 Quick Start & Deployment
 
 ### 1. Environment Configuration (`.env`)
+Copy `.env.example` to create your local `.env` configuration file:
 ```bash
 cp .env.example .env
+```
+
+**Environment Variables (`.env.example`):**
+```env
+# Server Port
+PORT=3000
+
+# MySQL Database Configuration
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=root
+MYSQL_DATABASE=cloudvault
+
+# Redis Configuration
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+# Local Cache Storage Paths & Limits
+LOCAL_BLOCKS_DIR=./storage/blocks
+TENANTS_STORAGE_DIR=./storage/tenants
+MAX_CACHE_SIZE_BYTES=104857600 # 100MB Cache Limit
+
+# AWS S3 Dual-Bucket Configuration (Intelligent Tiering)
+AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=your_aws_access_key_id
+AWS_SECRET_ACCESS_KEY=your_aws_secret_access_key
+S3_BUCKET_NAME=cloudvault-hot-standard
+HOT_BUCKET=cloudvault-hot-standard
+COLD_BUCKET=cloudvault-cold-glacier
+TIERING_INACTIVITY_DAYS=30
 ```
 
 ### 2. Run Gateway with Docker Compose
