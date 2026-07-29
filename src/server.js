@@ -9,13 +9,15 @@ import { getRedisClient } from './db/redis.js';
 import { startEvictionWatcher } from './services/evictionService.js';
 import gatewayRoutes from './routes/gateway.js';
 import proxyRoutes from './routes/proxy.js';
+import requestLogger from './middleware/requestLogger.js';
 
 const app = express();
 
-// Security and CORS middleware
+// Security, CORS, and logging middleware
 app.use(helmet());
 app.use(cors());
 app.use(express.json());
+app.use(requestLogger);
 
 // Serve static frontend files if any exist
 app.use(express.static('public'));
