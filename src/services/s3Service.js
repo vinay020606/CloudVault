@@ -30,7 +30,26 @@ export function getS3Client() {
 }
 
 /**
- * Uploads a file to an S3 bucket (default: Hot Bucket).
+ * Resolves the S3 bucket name for a tenant and tier.
+ * Supports both shared tenant prefix buckets and dynamic per-tenant buckets.
+ *
+ * @param {string} [tenantId] - Optional tenant ID
+ * @param {string} [tier='HOT'] - Storage tier ('HOT' or 'COLD')
+ * @returns {string} Bucket name
+ */
+export function getTenantBucket(tenantId, tier = 'HOT') {
+  const baseBucket = tier === 'COLD' ? config.s3.coldBucket : config.s3.hotBucket;
+
+  if (tenantId && process.env.DYNAMIC_TENANT_BUCKETS === 'true') {
+    const sanitizedTenant = tenantId.toLowerCase().replace(/[^a-z0-9-]/g, '');
+    return `${baseBucket}-${sanitizedTenant}`;
+  }
+
+  return baseBucket;
+}
+
+/**
+ * Uploads a file to an S3 bucket via streaming transmission.
  *
  * @param {string} s3Key - S3 Object Key
  * @param {string|Buffer|Readable} source - Source data
@@ -54,9 +73,9 @@ export async function uploadFileToS3(s3Key, source, bucketName = config.s3.hotBu
       },
     });
     await parallelUpload.done();
-    console.log(`[S3 Upload] Successfully synced file to S3 (${bucketName}): ${s3Key}`);
+    console.log(`[S3 Transmission] Successfully streamed file to S3 (${bucketName}): ${s3Key}`);
   } catch (err) {
-    console.warn(`[S3 Upload Warn] Failed uploading file ${s3Key} to S3 (${bucketName}):`, err.message);
+    console.warn(`[S3 Transmission Warn] Failed uploading file ${s3Key} to S3 (${bucketName}):`, err.message);
   }
 }
 
@@ -149,6 +168,7 @@ export async function restoreGlacierObject(s3Key, bucketName = config.s3.coldBuc
 
 export default {
   getS3Client,
+  getTenantBucket,
   uploadFileToS3,
   downloadFileFromS3,
   copyObjectBetweenBuckets,
