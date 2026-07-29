@@ -206,7 +206,41 @@ flowchart TD
 
 ## 🚀 Quick Start & Benchmarking
 
-### 1. Run with Docker Compose
+### 1. Environment Configuration (`.env`)
+Copy `.env.example` to create your local `.env` configuration file:
+```bash
+cp .env.example .env
+```
+
+**Environment Variables (`.env.example`):**
+```env
+# Server Port
+PORT=3000
+
+# MySQL Database Configuration
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=root
+MYSQL_DATABASE=cloudvault
+
+# Redis Configuration
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+# Local Cache Storage Paths & Limits
+LOCAL_BLOCKS_DIR=./storage/blocks
+TENANTS_STORAGE_DIR=./storage/tenants
+MAX_CACHE_SIZE_BYTES=104857600 # 100MB Cache Limit
+
+# AWS S3 Configuration
+AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=your_aws_access_key_id
+AWS_SECRET_ACCESS_KEY=your_aws_secret_access_key
+S3_BUCKET_NAME=your_s3_bucket_name
+```
+
+### 2. Run with Docker Compose
 ```bash
 docker-compose up --build -d
 ```
