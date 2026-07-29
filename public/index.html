@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CloudVault Gateway</title>
+    <style>
+        :root {
+            --bg: #ffffff;
+            --fg: #111111;
+            --border: #e2e2e2;
+            --subtle: #757575;
+            --action: #000000;
+            --font-stack: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            font-family: var(--font-stack);
+            background-color: var(--bg);
+            color: var(--fg);
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 40px;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        h1 {
+            font-weight: 700;
+            font-size: 20px;
+            margin-bottom: 5px;
+            letter-spacing: -0.02em;
+        }
+
+        .header {
+            margin-bottom: 40px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 20px;
+        }
+
+        .subtitle {
+            font-size: 13px;
+            color: var(--subtle);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+        }
+
+        .section-title {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--subtle);
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .section-box {
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+
+        /* Controls */
+        .input-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        input[type="file"] {
+            border: 1px solid var(--border);
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 13px;
+            flex-grow: 1;
+            background: #fafafa;
+        }
+
+        button {
+            background-color: var(--action);
+            color: var(--bg);
+            border: 1px solid var(--action);
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            opacity: 0.8;
+        }
+
+        button.outline {
+            background-color: transparent;
+            color: var(--fg);
+            border: 1px solid var(--border);
+        }
+
+        button.outline:hover {
+            border-color: var(--fg);
+        }
+
+        /* Logs Table - Clean List Style */
+        .logs-container {
+            height: 300px;
+            overflow-y: auto;
+            border-top: 1px solid var(--border);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        th {
+            text-align: left;
+            font-weight: 600;
+            color: var(--subtle);
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        td {
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border);
+            color: var(--fg);
+        }
+
+        .col-time {
+            width: 80px;
+            color: var(--subtle);
+            font-family: monospace;
+        }
+
+        .col-metric {
+            text-align: right;
+            font-weight: 600;
+            font-family: monospace;
+        }
+
+        /* File Repo */
+        .repo-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+        }
+
+        .repo-name {
+            font-weight: 500;
+        }
+
+        .action-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        /* Status */
+        #uploadStatus {
+            font-size: 12px;
+            color: var(--subtle);
+            margin-top: 8px;
+            height: 18px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="header">
+        <h1>CloudVault Gateway</h1>
+        <div class="subtitle">Distributed Storage Architecture</div>
+    </div>
+
+    <!-- Upload Section -->
+    <div class="section-box">
+        <div class="section-title">Data Ingestion</div>
+        <div class="input-group">
+            <input type="file" id="fileInput">
+            <button onclick="uploadFile()">Upload Stream</button>
+        </div>
+        <div id="uploadStatus"></div>
+    </div>
+
+    <div class="grid">
+        <!-- Logs Column -->
+        <div>
+            <div class="section-title">System Activity Log</div>
+            <div class="logs-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="col-time">Time</th>
+                            <th>Event</th>
+                            <th class="col-metric">Latency</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logBody">
+                        <!-- Logs inject here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Repository Column -->
+        <div>
+            <div class="section-title">Storage Repository</div>
+            <div id="fileList">
+                <!-- Files inject here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:3000/api/files';
+
+        function log(event, duration = null) {
+            const tbody = document.getElementById('logBody');
+            const row = document.createElement('tr');
+
+            const time = new Date().toLocaleTimeString([], { hour12: false });
+            const metric = duration ? `${duration}ms` : '-';
+
+            row.innerHTML = `
+                <td class="col-time">${time}</td>
+                <td>${event}</td>
+                <td class="col-metric">${metric}</td>
+            `;
+
+            tbody.prepend(row);
+        }
+
+        async function uploadFile() {
+            const fileInput = document.getElementById('fileInput');
+            const statusDiv = document.getElementById('uploadStatus');
+
+            if (!fileInput.files[0]) return alert("Input required.");
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            const fileName = fileInput.files[0].name;
+
+            statusDiv.textContent = "Processing upload stream...";
+            log(`Upload Started: ${fileName}`);
+
+            const startTime = performance.now();
+
+            try {
+                const res = await fetch(`${API_URL}/upload`, { method: 'POST', body: formData });
+                const data = await res.json();
+                const duration = (performance.now() - startTime).toFixed(0);
+
+                if (res.ok) {
+                    statusDiv.textContent = "Upload complete.";
+                    log(`Write Complete (S3 + Disk)`, duration);
+                    addFileToList(data.s3Key, fileName);
+                    fileInput.value = '';
+                    setTimeout(() => statusDiv.textContent = '', 2000);
+                } else {
+                    throw new Error(data.error || "Failed");
+                }
+            } catch (err) {
+                statusDiv.textContent = "Error.";
+                log(`Upload Error: ${err.message}`);
+            }
+        }
+
+        async function testDownload(key, source) {
+            // source: 'disk' or 'cloud'
+            const isCloud = source === 'cloud';
+            const url = `${API_URL}/download/${key}${isCloud ? '?nocache=true' : ''}`;
+
+            const label = isCloud ? "S3 Fetch" : "Disk Cache";
+            log(`Request: ${label}...`);
+
+            const startTime = performance.now();
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error("Failed");
+                await res.blob(); // Ensure full download
+
+                const duration = (performance.now() - startTime).toFixed(0);
+                log(`${label} Retrieved`, duration);
+
+            } catch (err) {
+                log(`Retrieval Error: ${err.message}`);
+            }
+        }
+
+        function addFileToList(key, name) {
+            const list = document.getElementById('fileList');
+            const item = document.createElement('div');
+            item.className = 'repo-item';
+
+            const displayName = name || key;
+
+            item.innerHTML = `
+                <div class="repo-name">${displayName}</div>
+                <div class="action-group">
+                    <button class="outline" onclick="testDownload('${key}', 'disk')">Cache</button>
+                    <button class="outline" onclick="testDownload('${key}', 'cloud')">S3</button>
+                </div>
+            `;
+            list.prepend(item);
+        }
+
+        // Initial Log
+        log('System Initialized');
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,29 @@
+{
+  "name": "cloudvault-node",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node tests/pathSanitizer.test.js && node tests/storage.test.js && node tests/singleflight.test.js && node tests/eviction.test.js && node tests/proxy.test.js",
+    "benchmark": "node scripts/benchmark.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "CloudVault - 4MB Fixed-Block Chunking, CAS Engine, & Multi-Tenant Storage Gateway",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.990.0",
+    "@aws-sdk/lib-storage": "^3.990.0",
+    "busboy": "^1.6.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "helmet": "^7.1.0",
+    "ioredis": "^5.4.1",
+    "mysql2": "^3.11.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
+}
