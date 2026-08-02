@@ -1035,16 +1035,17 @@
                 </div>
 
                 <!-- DRAG AND DROP INGESTION CARD -->
-                <div class="dropzone-card" id="dropzone" onclick="if(event.target.tagName !== 'INPUT') triggerFileInput()" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)" style="cursor: pointer;">
+                <div class="dropzone-card" id="dropzone" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
                     <h2 class="dropzone-title">DATA INGESTION STREAM</h2>
-                    <p class="dropzone-sub">Drag & drop files here or click anywhere in this box to browse</p>
+                    <p class="dropzone-sub">Drag and drop file objects here or click below to browse from disk</p>
 
-                    <div class="upload-controls" onclick="event.stopPropagation()">
-                        <input type="file" id="fileInputSelect" style="opacity: 0; position: absolute; z-index: -1; width: 1px; height: 1px;" onchange="handleFileSelect(event)">
-                        <input type="text" id="customFilePathInput" class="form-input" placeholder="CUSTOM VAULT PATH (E.G. DOCS/FILE.PDF)" onclick="event.stopPropagation()">
-                        <button type="button" class="btn btn-primary" onclick="triggerFileInput(); event.stopPropagation();">
+                    <div class="upload-controls" style="position: relative; display: flex; align-items: center; justify-content: center; gap: 16px;">
+                        <input type="text" id="customFilePathInput" class="form-input" placeholder="CUSTOM VAULT PATH (E.G. DOCS/FILE.PDF)">
+                        
+                        <label class="btn btn-primary" style="position: relative; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; overflow: hidden;">
                             <span>CHOOSE FILE</span>
-                        </button>
+                            <input type="file" id="fileInputSelect" onchange="handleFileSelect(event)" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 10;">
+                        </label>
                     </div>
                     <div id="uploadStatusMessage" style="margin-top: 20px; font-family: var(--font-mono); font-size: 13px; font-weight: 700;"></div>
                 </div>
