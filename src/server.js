@@ -7,6 +7,7 @@ import config from './config/index.js';
 import { initDB } from './db/mysql.js';
 import { getRedisClient } from './db/redis.js';
 import { startEvictionWatcher } from './services/evictionService.js';
+import { startTieringCron } from './workers/tieringWorker.js';
 import gatewayRoutes from './routes/gateway.js';
 import proxyRoutes from './routes/proxy.js';
 import healthRoutes from './routes/health.js';

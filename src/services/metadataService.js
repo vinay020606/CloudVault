@@ -104,9 +104,62 @@ export async function updateFileTier(fileId, newTier) {
   await query(sql, [newTier, fileId]);
 }
 
+/**
+ * Retrieves all files registered for a specific tenant.
+ *
+ * @param {string} tenantId - Tenant ID
+ * @returns {Promise<Array<Object>>} Array of file metadata objects
+ */
+export async function listTenantFiles(tenantId) {
+  try {
+    const sql = `
+      SELECT id, tenant_id, file_path, file_name, size_bytes, s3_key, current_tier, last_accessed_at, access_count, created_at
+      FROM files
+      WHERE tenant_id = ?
+      ORDER BY created_at DESC
+    `;
+
+    const rows = await query(sql, [tenantId]);
+    if (!rows) return [];
+
+    return rows.map((row) => ({
+      id: row.id,
+      tenantId: row.tenant_id,
+      filePath: row.file_path,
+      fileName: row.file_name,
+      sizeBytes: Number(row.size_bytes),
+      s3Key: row.s3_key,
+      currentTier: row.current_tier || 'HOT',
+      lastAccessedAt: row.last_accessed_at,
+      accessCount: Number(row.access_count || 1),
+      createdAt: row.created_at,
+    }));
+  } catch (err) {
+    console.warn(`[Metadata Warn] Failed to list files for tenant ${tenantId}:`, err.message);
+    return [];
+  }
+}
+
+/**
+ * Deletes a file record from MySQL for a tenant.
+ *
+ * @param {string} tenantId - Tenant ID
+ * @param {string} filePath - File path
+ */
+export async function deleteFileRecord(tenantId, filePath) {
+  try {
+    const sql = `DELETE FROM files WHERE tenant_id = ? AND file_path = ?`;
+    await query(sql, [tenantId, filePath]);
+  } catch (err) {
+    console.warn(`[Metadata Warn] Failed to delete file record ${filePath}:`, err.message);
+  }
+}
+
 export default {
   createFileRecord,
   getFileMetadata,
   touchFileAccess,
   updateFileTier,
+  listTenantFiles,
+  deleteFileRecord,
 };

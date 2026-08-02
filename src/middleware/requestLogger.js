@@ -13,7 +13,6 @@ export function requestLogger(req, res, next) {
 
   res.on('finish', () => {
     const duration = (performance.now() - start).toFixed(2);
-    res.setHeader('X-Response-Time', `${duration}ms`);
     console.log(`[HTTP Proxy Log] ${req.method} ${req.originalUrl} -> Status ${res.statusCode} (${duration}ms) [ReqID: ${reqId.substring(0, 8)}]`);
   });
 

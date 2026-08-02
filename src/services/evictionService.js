@@ -131,9 +131,38 @@ export function startEvictionWatcher(redisClient, options = {}) {
   return timer;
 }
 
+/**
+ * Invalidates and removes a file from local disk cache and Redis LRU tracking
+ * when the file is updated or changed in S3.
+ *
+ * @param {string} tenantId - Tenant ID
+ * @param {string} filePath - User file path
+ * @returns {Promise<boolean>} True if local cache file was removed, false otherwise
+ */
+export async function invalidateFileCache(tenantId, filePath) {
+  if (!tenantId || !filePath) return false;
+  const fileKey = `${tenantId}:${filePath}`;
+  let removed = false;
+
+  try {
+    const tenantsDir = config.storage.tenantsDir;
+    const localDiskPath = path.join(tenantsDir, tenantId, filePath.replace(/^(\/|\\)+/, ''));
+    await fs.promises.unlink(localDiskPath);
+    removed = true;
+    console.log(`[Cache Invalidation] Successfully purged local disk cache for updated S3 object: ${fileKey}`);
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      console.warn(`[Cache Invalidation Warn] Error unlinking ${filePath}:`, err.message);
+    }
+  }
+
+  return removed;
+}
+
 export default {
   touchFile,
   calculateTenantsFolderSize,
   checkAndEvict,
   startEvictionWatcher,
+  invalidateFileCache,
 };

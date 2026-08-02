@@ -5,9 +5,9 @@ import path from 'path';
 import { pipeline } from 'stream/promises';
 import config from '../config/index.js';
 import { resolveTenantPath, SecurityError } from '../utils/pathSanitizer.js';
-import { createFileRecord, getFileMetadata, touchFileAccess } from '../services/metadataService.js';
+import { createFileRecord, getFileMetadata, touchFileAccess, listTenantFiles, deleteFileRecord } from '../services/metadataService.js';
 import { execute as singleflightExecute } from '../services/singleflightService.js';
-import { touchFile } from '../services/evictionService.js';
+import { touchFile, invalidateFileCache } from '../services/evictionService.js';
 import { uploadFileToS3, downloadFileFromS3, restoreGlacierObject } from '../services/s3Service.js';
 import { getRedisClient } from '../db/redis.js';
 
@@ -281,6 +281,95 @@ router.get('/download', async (req, res) => {
       return res.status(500).json({ error: err.message });
     }
     res.end();
+  }
+});
+
+/**
+ * GET /api/v1/gateway/files
+ * Headers: x-tenant-id
+ * Returns array of tenant files
+ */
+router.get('/files', async (req, res) => {
+  const tenantId = req.headers['x-tenant-id'];
+  if (!tenantId) {
+    return res.status(400).json({ error: 'Missing x-tenant-id header' });
+  }
+
+  try {
+    const files = await listTenantFiles(tenantId);
+    return res.json({ files });
+  } catch (err) {
+    console.error('[List Files Error]:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/v1/gateway/files
+ * Headers: x-tenant-id
+ * Query: filePath
+ */
+router.delete('/files', async (req, res) => {
+  const tenantId = req.headers['x-tenant-id'];
+  const filePath = req.query.filePath;
+
+  if (!tenantId) {
+    return res.status(400).json({ error: 'Missing x-tenant-id header' });
+  }
+
+  if (!filePath) {
+    return res.status(400).json({ error: 'Missing filePath query parameter' });
+  }
+
+  try {
+    const targetLocalPath = resolveTenantPath(tenantId, filePath);
+    try {
+      await fs.promises.unlink(targetLocalPath);
+    } catch {}
+
+    await deleteFileRecord(tenantId, filePath);
+
+    const redis = getRedisClient();
+    if (redis) {
+      await redis.zrem('cloudvault:lru_files', `${tenantId}:${filePath}`).catch(() => {});
+    }
+
+    return res.json({ message: 'File deleted successfully', filePath });
+  } catch (err) {
+    if (err instanceof SecurityError) {
+      return res.status(err.statusCode || 403).json({ error: err.message });
+    }
+    console.error('[Delete Error]:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/v1/gateway/invalidate
+ * Headers: x-tenant-id (or body.tenantId)
+ * Query/Body: filePath
+ * Triggered whenever a file is changed/updated in S3 to purge the local disk cache
+ */
+router.post('/invalidate', async (req, res) => {
+  const tenantId = req.headers['x-tenant-id'] || req.body?.tenantId;
+  const filePath = req.query.filePath || req.body?.filePath;
+
+  if (!tenantId || !filePath) {
+    return res.status(400).json({ error: 'Missing tenantId or filePath parameters' });
+  }
+
+  try {
+    const purged = await invalidateFileCache(tenantId, filePath);
+    return res.json({
+      invalidated: true,
+      purgedLocalDisk: purged,
+      tenantId,
+      filePath,
+      message: `Local cache for ${filePath} invalidated successfully. Next download will fetch latest S3 version.`,
+    });
+  } catch (err) {
+    console.error('[Invalidate Error]:', err);
+    return res.status(500).json({ error: err.message });
   }
 });
 

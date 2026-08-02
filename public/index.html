@@ -4,321 +4,1610 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CloudVault Gateway</title>
+    <title>CLOUDVAULT // MINIMALIST MONOCHROME GATEWAY</title>
+    <!-- Google Fonts: Playfair Display, Source Serif 4, JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,600;0,700;1,400&family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400;1,700&family=Source+Serif+4:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg: #ffffff;
-            --fg: #111111;
-            --border: #e2e2e2;
-            --subtle: #757575;
-            --action: #000000;
-            --font-stack: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            /* Minimalist Monochrome Design Tokens */
+            --bg-main: #FFFFFF;          /* Pure White */
+            --bg-surface: #FFFFFF;       /* Pure White Cards */
+            --bg-muted: #F5F5F5;         /* Off-white secondary surfaces */
+            --bg-dark: #000000;          /* Pure Black for inverted sections */
+            
+            --fg-main: #000000;          /* Pure Black text */
+            --fg-muted: #525252;         /* Dark Gray secondary text */
+            --fg-inverse: #FFFFFF;       /* Pure White text for dark surfaces */
+            --fg-light: #A3A3A3;         /* Subtle gray */
+
+            --border-black: #000000;     /* Pure Black Borders */
+            --border-light: #E5E5E5;     /* Hairline dividers */
+
+            --font-display: "Playfair Display", Georgia, serif;
+            --font-body: "Source Serif 4", Georgia, serif;
+            --font-mono: "JetBrains Mono", monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            border-radius: 0px !important; /* Zero radius everywhere: Architectural precision */
         }
 
         body {
-            font-family: var(--font-stack);
-            background-color: var(--bg);
-            color: var(--fg);
-            max-width: 960px;
-            margin: 0 auto;
-            padding: 40px;
-            line-height: 1.5;
+            font-family: var(--font-body);
+            background-color: var(--bg-main);
+            color: var(--fg-main);
+            min-height: 100vh;
+            line-height: 1.6;
             -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
         }
 
-        h1 {
+        /* Paper Noise Texture Overlay */
+        .noise-overlay {
+            position: fixed;
+            inset: 0;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+            opacity: 0.02;
+            pointer-events: none;
+            z-index: 999;
+        }
+
+        .hidden { display: none !important; }
+
+        /* Typography */
+        h1, h2, h3, h4, .font-serif-display {
+            font-family: var(--font-display);
             font-weight: 700;
-            font-size: 20px;
-            margin-bottom: 5px;
             letter-spacing: -0.02em;
         }
 
-        .header {
-            margin-bottom: 40px;
-            border-bottom: 1px solid var(--border);
-            padding-bottom: 20px;
+        .font-mono {
+            font-family: var(--font-mono);
         }
 
-        .subtitle {
+        /* Hero Display Statement */
+        .hero-statement {
+            font-family: var(--font-display);
+            font-size: clamp(2.8rem, 7.5vw, 8rem);
+            line-height: 0.95;
+            font-weight: 900;
+            color: var(--fg-main);
+            margin-bottom: 24px;
+            letter-spacing: -0.03em;
+        }
+
+        .hero-statement em {
+            font-style: italic;
+            font-weight: 400;
+        }
+
+        /* Horizontal Section Rules */
+        .rule-thick {
+            border-bottom: 4px solid var(--border-black);
+        }
+
+        .rule-ultra {
+            border-bottom: 8px solid var(--border-black);
+        }
+
+        .rule-thin {
+            border-bottom: 1px solid var(--border-black);
+        }
+
+        .rule-hairline {
+            border-bottom: 1px solid var(--border-light);
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 16px 32px;
+            font-family: var(--font-mono);
             font-size: 13px;
-            color: var(--subtle);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            cursor: pointer;
+            transition: all 100ms ease; /* Instant binary transitions */
+            border: 2px solid var(--border-black);
+            text-decoration: none;
+            box-shadow: none !important;
         }
 
-        .grid {
+        .btn-primary {
+            background: var(--fg-main);
+            color: var(--fg-inverse);
+            border-color: var(--border-black);
+        }
+
+        .btn-primary:hover {
+            background: var(--bg-main);
+            color: var(--fg-main);
+            border-color: var(--border-black);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--fg-main);
+            border-color: var(--border-black);
+        }
+
+        .btn-secondary:hover {
+            background: var(--fg-main);
+            color: var(--fg-inverse);
+        }
+
+        .btn-sm {
+            padding: 8px 16px;
+            font-size: 11px;
+        }
+
+        .btn-full { width: 100%; }
+
+        /* AUTHENTICATION OVERLAY MODAL */
+        #authOverlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(4px);
+            z-index: 200;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .auth-card {
+            background: var(--bg-main);
+            border: 4px solid var(--border-black);
+            width: 100%;
+            max-width: 520px;
+            padding: 48px;
+            position: relative;
+        }
+
+        .auth-close-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: transparent;
+            border: 1px solid var(--border-black);
+            color: var(--fg-main);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 700;
+            padding: 4px 10px;
+            cursor: pointer;
+        }
+
+        .auth-close-btn:hover {
+            background: var(--fg-main);
+            color: var(--fg-inverse);
+        }
+
+        .auth-tabs {
+            display: flex;
+            border-bottom: 2px solid var(--border-black);
+            margin-bottom: 32px;
+        }
+
+        .auth-tab {
+            flex: 1;
+            padding: 14px 0;
+            text-align: center;
+            font-family: var(--font-mono);
+            font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--fg-muted);
+            cursor: pointer;
+            border-bottom: 4px solid transparent;
+            margin-bottom: -2px;
+            transition: all 100ms ease;
+        }
+
+        .auth-tab.active {
+            color: var(--fg-main);
+            border-bottom-color: var(--border-black);
+        }
+
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        .form-label {
+            display: block;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--fg-muted);
+            margin-bottom: 8px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 14px 0;
+            font-family: var(--font-mono);
+            font-size: 15px;
+            font-weight: 600;
+            border: none;
+            border-bottom: 2px solid var(--border-black);
+            background: transparent;
+            color: var(--fg-main);
+            transition: border-width 100ms ease;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-bottom-width: 4px;
+        }
+
+        .persona-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 40px;
+            gap: 12px;
+            margin-top: 16px;
         }
 
-        .section-title {
+        .persona-chip {
+            padding: 16px;
+            border: 1px solid var(--border-black);
+            background: var(--bg-muted);
+            cursor: pointer;
+            transition: all 100ms ease;
+        }
+
+        .persona-chip:hover {
+            background: var(--fg-main);
+            color: var(--fg-inverse);
+            border-color: var(--border-black);
+        }
+
+        .persona-chip:hover .persona-role {
+            color: var(--fg-light);
+        }
+
+        .persona-name {
+            font-family: var(--font-display);
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        .persona-role {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--fg-muted);
+            margin-top: 4px;
+        }
+
+        /* LAYOUT STRUCTURE */
+        .app-layout {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* SIDEBAR */
+        .sidebar {
+            width: 320px;
+            background: var(--bg-main);
+            border-right: 2px solid var(--border-black);
+            display: flex;
+            flex-direction: column;
+            padding: 40px 32px;
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 30;
+        }
+
+        .brand-header {
+            margin-bottom: 48px;
+        }
+
+        .brand-title {
+            font-family: var(--font-display);
+            font-size: 26px;
+            font-weight: 900;
+            letter-spacing: -0.03em;
+            color: var(--fg-main);
+        }
+
+        .brand-sub {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.15em;
+            color: var(--fg-muted);
+            margin-top: 4px;
+            text-transform: uppercase;
+        }
+
+        .nav-label {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: var(--fg-muted);
+            margin-bottom: 16px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 16px;
+            font-family: var(--font-mono);
             font-size: 12px;
-            font-weight: 600;
+            font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.05em;
-            color: var(--subtle);
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .section-box {
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 20px;
-            margin-bottom: 30px;
-        }
-
-        /* Controls */
-        .input-group {
-            display: flex;
-            gap: 10px;
-        }
-
-        input[type="file"] {
-            border: 1px solid var(--border);
-            padding: 8px;
-            border-radius: 4px;
-            font-size: 13px;
-            flex-grow: 1;
-            background: #fafafa;
-        }
-
-        button {
-            background-color: var(--action);
-            color: var(--bg);
-            border: 1px solid var(--action);
-            padding: 8px 16px;
-            font-size: 13px;
-            font-weight: 500;
+            color: var(--fg-main);
+            border: 1px solid transparent;
             cursor: pointer;
-            border-radius: 4px;
-            transition: all 0.2s;
+            transition: all 100ms ease;
+            margin-bottom: 8px;
         }
 
-        button:hover {
-            opacity: 0.8;
+        .nav-item:hover {
+            border-color: var(--border-black);
+            background: var(--bg-muted);
         }
 
-        button.outline {
-            background-color: transparent;
-            color: var(--fg);
-            border: 1px solid var(--border);
+        .nav-item.active {
+            background: var(--fg-main);
+            color: var(--fg-inverse);
+            border-color: var(--border-black);
         }
 
-        button.outline:hover {
-            border-color: var(--fg);
+        .badge-chip {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border: 1px solid var(--border-black);
+            background: var(--bg-main);
+            color: var(--fg-main);
         }
 
-        /* Logs Table - Clean List Style */
-        .logs-container {
-            height: 300px;
-            overflow-y: auto;
-            border-top: 1px solid var(--border);
+        .nav-item.active .badge-chip {
+            background: var(--bg-main);
+            color: var(--fg-main);
         }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 12px;
+        .sidebar-quota {
+            margin-top: auto;
+            border: 2px solid var(--border-black);
+            padding: 24px;
+            background: var(--bg-muted);
         }
 
-        th {
-            text-align: left;
-            font-weight: 600;
-            color: var(--subtle);
-            padding: 10px 0;
-            border-bottom: 1px solid var(--border);
+        .progress-bar {
+            height: 8px;
+            background: var(--border-light);
+            border: 1px solid var(--border-black);
+            margin: 12px 0;
         }
 
-        td {
-            padding: 10px 0;
-            border-bottom: 1px solid var(--border);
-            color: var(--fg);
+        .progress-fill {
+            height: 100%;
+            background: var(--fg-main);
+            width: 35%;
         }
 
-        .col-time {
-            width: 80px;
-            color: var(--subtle);
-            font-family: monospace;
-        }
-
-        .col-metric {
-            text-align: right;
-            font-weight: 600;
-            font-family: monospace;
-        }
-
-        /* File Repo */
-        .repo-item {
+        /* MAIN CONTENT AREA */
+        .main-wrapper {
+            flex: 1;
+            margin-left: 320px;
             display: flex;
-            justify-content: space-between;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .header {
+            height: 84px;
+            border-bottom: 2px solid var(--border-black);
+            background: var(--bg-main);
+            display: flex;
             align-items: center;
+            justify-content: space-between;
+            padding: 0 48px;
+            position: sticky;
+            top: 0;
+            z-index: 20;
+        }
+
+        .search-input {
+            width: 400px;
             padding: 12px 0;
-            border-bottom: 1px solid var(--border);
+            font-family: var(--font-mono);
             font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid var(--border-black);
+            color: var(--fg-main);
         }
 
-        .repo-name {
-            font-weight: 500;
+        .search-input:focus {
+            outline: none;
+            border-bottom-width: 4px;
         }
 
-        .action-group {
+        .user-status {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .content {
+            padding: 64px 48px;
+            max-width: 1350px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        /* HERO EDITORIAL SECTION */
+        .hero-editorial {
+            margin-bottom: 56px;
+            padding-bottom: 40px;
+            border-bottom: 4px solid var(--border-black);
+        }
+
+        .editorial-tag {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            color: var(--fg-muted);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .editorial-tag::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border-black);
+        }
+
+        .hero-desc {
+            font-size: 18px;
+            color: var(--fg-muted);
+            max-width: 680px;
+            line-height: 1.6;
+        }
+
+        /* INVERTED METRICS SECTION (PURE BLACK BACKGROUND) */
+        .metrics-section {
+            background: var(--bg-dark);
+            color: var(--fg-inverse);
+            padding: 48px;
+            border: 2px solid var(--border-black);
+            margin-bottom: 64px;
+            position: relative;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 32px;
+        }
+
+        .metric-card {
+            border-right: 1px solid #333333;
+            padding-right: 24px;
+        }
+
+        .metric-card:last-child {
+            border-right: none;
+        }
+
+        .metric-label {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--fg-light);
+            margin-bottom: 12px;
+        }
+
+        .metric-value {
+            font-family: var(--font-display);
+            font-size: 52px;
+            font-weight: 900;
+            color: var(--fg-inverse);
+            line-height: 1;
+        }
+
+        /* INGESTION DROPZONE CONTAINER */
+        .dropzone-card {
+            border: 2px solid var(--border-black);
+            background: var(--bg-main);
+            padding: 56px;
+            text-align: center;
+            margin-bottom: 64px;
+            transition: all 100ms ease;
+        }
+
+        .dropzone-card.drag-over {
+            background: var(--bg-dark);
+            color: var(--fg-inverse);
+        }
+
+        .dropzone-card.drag-over .dropzone-sub {
+            color: var(--fg-light);
+        }
+
+        .dropzone-card.drag-over .form-input {
+            color: var(--fg-inverse);
+            border-bottom-color: var(--fg-inverse);
+        }
+
+        .dropzone-title {
+            font-size: 32px;
+            font-weight: 900;
+            margin-bottom: 8px;
+        }
+
+        .dropzone-sub {
+            font-family: var(--font-body);
+            font-size: 15px;
+            color: var(--fg-muted);
+            margin-bottom: 32px;
+        }
+
+        .upload-controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* TOOLBAR */
+        .toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 32px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid var(--border-black);
+        }
+
+        .filter-group {
+            display: flex;
+            gap: 12px;
+        }
+
+        .filter-pill {
+            padding: 10px 20px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            border: 1px solid var(--border-black);
+            background: var(--bg-main);
+            color: var(--fg-main);
+            cursor: pointer;
+            transition: all 100ms ease;
+        }
+
+        .filter-pill:hover {
+            background: var(--bg-muted);
+        }
+
+        .filter-pill.active {
+            background: var(--fg-main);
+            color: var(--fg-inverse);
+        }
+
+        /* REPOSITORY GRID & HARD COLOR INVERSION */
+        .files-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 24px;
+            margin-bottom: 64px;
+        }
+
+        .file-card {
+            border: 2px solid var(--border-black);
+            background: var(--bg-main);
+            padding: 32px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 240px;
+            transition: all 100ms ease;
+        }
+
+        /* HARD COLOR INVERSION ON HOVER */
+        .file-card:hover {
+            background: var(--fg-main);
+            color: var(--fg-inverse);
+        }
+
+        .file-card:hover .file-name,
+        .file-card:hover .file-meta-text {
+            color: var(--fg-inverse) !important;
+        }
+
+        .file-card:hover .tier-badge {
+            border-color: var(--fg-inverse) !important;
+            background: var(--bg-main) !important;
+            color: var(--fg-main) !important;
+        }
+
+        .file-card:hover .action-btn {
+            border-color: var(--fg-inverse);
+            color: var(--fg-inverse);
+        }
+
+        .file-card:hover .action-btn:hover {
+            background: var(--fg-inverse);
+            color: var(--fg-main);
+        }
+
+        .file-name {
+            font-family: var(--font-display);
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .file-meta-text {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--fg-muted);
+        }
+
+        .tier-badge {
+            display: inline-block;
+            font-family: var(--font-mono);
+            font-size: 10px;
+            font-weight: 700;
+            padding: 3px 10px;
+            text-transform: uppercase;
+            margin-top: 12px;
+            border: 1px solid var(--border-black);
+            background: var(--bg-muted);
+            color: var(--fg-main);
+        }
+
+        .file-actions {
             display: flex;
             gap: 8px;
+            margin-top: 24px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-light);
         }
 
-        /* Status */
-        #uploadStatus {
+        .file-card:hover .file-actions {
+            border-top-color: #333333;
+        }
+
+        .action-btn {
+            flex: 1;
+            padding: 8px 0;
+            font-family: var(--font-mono);
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            border: 1px solid var(--border-black);
+            background: transparent;
+            color: var(--fg-main);
+            cursor: pointer;
+            transition: all 100ms ease;
+            text-align: center;
+        }
+
+        /* LIST VIEW */
+        .files-list {
+            border: 2px solid var(--border-black);
+            background: var(--bg-main);
+            margin-bottom: 64px;
+        }
+
+        .list-header, .list-row {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 1fr 240px;
+            align-items: center;
+            padding: 18px 28px;
+            font-family: var(--font-mono);
             font-size: 12px;
-            color: var(--subtle);
-            margin-top: 8px;
-            height: 18px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .list-header {
+            background: var(--bg-muted);
+            border-bottom: 2px solid var(--border-black);
+            color: var(--fg-muted);
+        }
+
+        .list-row {
+            border-bottom: 1px solid var(--border-light);
+            transition: all 100ms ease;
+        }
+
+        .list-row:hover {
+            background: var(--fg-main);
+            color: var(--fg-inverse);
+        }
+
+        .list-row:hover .action-btn {
+            border-color: var(--fg-inverse);
+            color: var(--fg-inverse);
+        }
+
+        /* TELEMETRY LOGS TABLE */
+        .logs-card {
+            border: 2px solid var(--border-black);
+            background: var(--bg-main);
+        }
+
+        .logs-header {
+            padding: 24px 32px;
+            border-bottom: 2px solid var(--border-black);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-family: var(--font-mono);
+            font-size: 14px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .logs-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: var(--font-mono);
+            font-size: 12px;
+        }
+
+        .logs-table th {
+            text-align: left;
+            padding: 14px 32px;
+            background: var(--bg-muted);
+            color: var(--fg-muted);
+            border-bottom: 2px solid var(--border-black);
+            text-transform: uppercase;
+        }
+
+        .logs-table td {
+            padding: 14px 32px;
+            border-bottom: 1px solid var(--border-light);
+            color: var(--fg-main);
+        }
+
+        .latency-badge {
+            border: 1px solid var(--border-black);
+            background: var(--fg-main);
+            color: var(--fg-inverse);
+            font-weight: 700;
+            padding: 3px 8px;
+        }
+
+        /* PREVIEW LIGHTBOX MODAL */
+        #previewModal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.88);
+            backdrop-filter: blur(6px);
+            z-index: 300;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 32px;
+        }
+
+        .preview-box {
+            background: var(--bg-main);
+            border: 4px solid var(--border-black);
+            width: 100%;
+            max-width: 760px;
+            max-height: 88vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .preview-header {
+            padding: 24px 32px;
+            border-bottom: 2px solid var(--border-black);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .preview-body {
+            padding: 36px;
+            overflow-y: auto;
+            flex: 1;
+            text-align: center;
+        }
+
+        .preview-img {
+            max-width: 100%;
+            max-height: 440px;
+            border: 2px solid var(--border-black);
+        }
+
+        .preview-text {
+            text-align: left;
+            font-family: var(--font-mono);
+            font-size: 13px;
+            background: var(--bg-muted);
+            padding: 24px;
+            border: 2px solid var(--border-black);
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 400px;
+            overflow-y: auto;
+            color: var(--fg-main);
         }
     </style>
 </head>
 
 <body>
+    <!-- Paper Noise Overlay -->
+    <div class="noise-overlay"></div>
 
-    <div class="header">
-        <h1>CloudVault Gateway</h1>
-        <div class="subtitle">Distributed Storage Architecture</div>
-    </div>
+    <!-- AUTHENTICATION OVERLAY MODAL -->
+    <div id="authOverlay" class="hidden">
+        <div class="auth-card">
+            <button class="auth-close-btn" onclick="closeAuthModal()">✕ CLOSE</button>
 
-    <!-- Upload Section -->
-    <div class="section-box">
-        <div class="section-title">Data Ingestion</div>
-        <div class="input-group">
-            <input type="file" id="fileInput">
-            <button onclick="uploadFile()">Upload Stream</button>
-        </div>
-        <div id="uploadStatus"></div>
-    </div>
+            <!-- TABS: SIGN IN / CREATE ACCOUNT -->
+            <div class="auth-tabs">
+                <div class="auth-tab active" id="tabSignIn" onclick="switchAuthTab('signin')">SIGN IN</div>
+                <div class="auth-tab" id="tabSignUp" onclick="switchAuthTab('signup')">CREATE ACCOUNT</div>
+            </div>
 
-    <div class="grid">
-        <!-- Logs Column -->
-        <div>
-            <div class="section-title">System Activity Log</div>
-            <div class="logs-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th class="col-time">Time</th>
-                            <th>Event</th>
-                            <th class="col-metric">Latency</th>
-                        </tr>
-                    </thead>
-                    <tbody id="logBody">
-                        <!-- Logs inject here -->
-                    </tbody>
-                </table>
+            <!-- SIGN IN FORM -->
+            <form id="formSignIn" onsubmit="handleAuthLogin(event)">
+                <div class="form-group">
+                    <label class="form-label">USERNAME OR EMAIL</label>
+                    <input type="text" id="authTenantId" class="form-input" placeholder="E.G. TENANT-ALEX" required value="tenant-alex">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">PASSWORD</label>
+                    <input type="password" id="authPassword" class="form-input" placeholder="••••••••" required value="password123">
+                </div>
+                <button type="submit" class="btn btn-primary btn-full" style="margin-top: 12px;">
+                    <span>AUTHENTICATE SESSION</span>
+                </button>
+            </form>
+
+            <!-- CREATE ACCOUNT FORM -->
+            <form id="formSignUp" class="hidden" onsubmit="handleAuthRegister(event)">
+                <div class="form-group">
+                    <label class="form-label">FULL NAME / USERNAME</label>
+                    <input type="text" id="regName" class="form-input" placeholder="E.G. ALEX MORGAN" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">TENANT IDENTIFIER</label>
+                    <input type="text" id="regTenantId" class="form-input" placeholder="E.G. TENANT-MYAPP" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">PASSWORD</label>
+                    <input type="password" id="regPassword" class="form-input" placeholder="••••••••" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-full" style="margin-top: 12px;">
+                    <span>REGISTER ACCOUNT</span>
+                </button>
+            </form>
+
+            <div style="margin: 32px 0 16px; font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted); letter-spacing: 0.15em; text-align: center; text-transform: uppercase;">
+                — OR SELECT PRESET DEMO ACCOUNT —
+            </div>
+
+            <div class="persona-grid">
+                <div class="persona-chip" onclick="quickLogin('tenant-alex', 'ALEX MORGAN')">
+                    <div class="persona-name">ALEX MORGAN</div>
+                    <div class="persona-role">tenant-alex</div>
+                </div>
+                <div class="persona-chip" onclick="quickLogin('tenant-techcorp', 'TECHCORP INC')">
+                    <div class="persona-name">TECHCORP INC</div>
+                    <div class="persona-role">tenant-techcorp</div>
+                </div>
             </div>
         </div>
+    </div>
 
-        <!-- Repository Column -->
-        <div>
-            <div class="section-title">Storage Repository</div>
-            <div id="fileList">
-                <!-- Files inject here -->
+    <!-- MAIN APP CONTAINER -->
+    <div id="appContainer" class="app-layout">
+
+        <!-- SIDEBAR NAVIGATION -->
+        <aside class="sidebar">
+            <div class="brand-header">
+                <h1 class="brand-title">CLOUDVAULT</h1>
+                <div class="brand-sub">EDITORIAL STORAGE GATEWAY</div>
+            </div>
+
+            <div class="nav-label">WORKSPACE VIEWS</div>
+            <div class="nav-item active" onclick="switchNavTab('all', this)">
+                <span>ALL FILES</span>
+                <span class="badge-chip" id="countAllFiles">0</span>
+            </div>
+            <div class="nav-item" onclick="switchNavTab('hot', this)">
+                <span>HOT CACHE</span>
+                <span class="badge-chip" id="countHotFiles">0</span>
+            </div>
+            <div class="nav-item" onclick="switchNavTab('cold', this)">
+                <span>GLACIER ARCHIVE</span>
+                <span class="badge-chip" id="countColdFiles">0</span>
+            </div>
+            <div class="nav-item" onclick="switchNavTab('logs', this)">
+                <span>SYSTEM LOGS</span>
+            </div>
+
+            <!-- STORAGE QUOTA BOX -->
+            <div class="sidebar-quota">
+                <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;">VOLUME CAPACITY</div>
+                <div style="font-family: var(--font-mono); font-size: 12px; color: var(--fg-muted); margin-top: 6px;" id="quotaText">Calculating...</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="quotaFill"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 11px; font-family: var(--font-mono);">
+                    <span style="color: var(--fg-muted);">CACHE HIT RATE</span>
+                    <span style="font-weight: 700;">98.4%</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- MAIN WRAPPER -->
+        <div class="main-wrapper">
+
+            <!-- HEADER BAR -->
+            <header class="header">
+                <input type="text" id="searchQuery" class="search-input" placeholder="SEARCH VAULT REPOSITORY..." oninput="handleSearch(this.value)">
+
+                <div class="user-status">
+                    <div style="display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 11px; font-weight: 700; border: 1px solid var(--border-black); padding: 8px 14px; text-transform: uppercase;">
+                        <span style="width: 8px; height: 8px; background: var(--fg-main); display: inline-block;"></span>
+                        <span>GATEWAY ONLINE</span>
+                    </div>
+
+                    <div style="font-family: var(--font-display); font-size: 15px; font-weight: 700; text-transform: uppercase;" id="userName">ALEX MORGAN</div>
+                    <button class="btn btn-secondary btn-sm" onclick="openAuthModal()">ACCOUNT</button>
+                    <button class="btn btn-secondary btn-sm" onclick="logout()">LOGOUT</button>
+                </div>
+            </header>
+
+            <!-- MAIN WORKSPACE CONTENT -->
+            <main class="content">
+
+                <!-- HERO EDITORIAL TITLE -->
+                <div class="hero-editorial">
+                    <div class="editorial-tag">
+                        <span>VOLUME 01 // ARCHITECTURAL STORAGE GATEWAY</span>
+                    </div>
+                    <h1 class="hero-statement">
+                        STORAGE <em>&</em> REPOSITORY
+                    </h1>
+                    <p class="hero-desc">
+                        A disciplined, high-performance gateway providing whole-file disk caching, transparent cloud proxying, and intelligent Glacier storage tiering.
+                    </p>
+                </div>
+
+                <!-- INVERTED METRICS SECTION (PURE BLACK BACKGROUND) -->
+                <div class="metrics-section">
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <div class="metric-label">TOTAL OBJECTS</div>
+                            <div class="metric-value" id="metricTotalFiles">0</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">VOLUME USED</div>
+                            <div class="metric-value" id="metricTotalBytes">0 MB</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">HOT DISK CACHE</div>
+                            <div class="metric-value" id="metricHotCount">0</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">GLACIER COLD</div>
+                            <div class="metric-value" id="metricColdCount">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- DRAG AND DROP INGESTION CARD -->
+                <div class="dropzone-card" id="dropzone" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+                    <h2 class="dropzone-title">DATA INGESTION STREAM</h2>
+                    <p class="dropzone-sub">Drag and drop file objects here or browse from local storage</p>
+
+                    <div class="upload-controls">
+                        <input type="file" id="fileInputSelect" class="hidden" onchange="handleFileSelect(event)">
+                        <input type="text" id="customFilePathInput" class="form-input" placeholder="CUSTOM VAULT PATH (E.G. DOCS/FILE.PDF)">
+                        <button class="btn btn-primary" onclick="document.getElementById('fileInputSelect').click()">
+                            <span>CHOOSE FILE</span>
+                        </button>
+                    </div>
+                    <div id="uploadStatusMessage" style="margin-top: 20px; font-family: var(--font-mono); font-size: 13px; font-weight: 700;"></div>
+                </div>
+
+                <!-- TOOLBAR & FILTERS -->
+                <div class="toolbar">
+                    <h2 style="font-size: 24px;">REPOSITORIES</h2>
+
+                    <div class="filter-group">
+                        <div class="filter-pill active" onclick="setCategoryFilter('all', this)">ALL OBJECTS</div>
+                        <div class="filter-pill" onclick="setCategoryFilter('image', this)">IMAGES</div>
+                        <div class="filter-pill" onclick="setCategoryFilter('document', this)">DOCUMENTS</div>
+                        <div class="filter-pill" onclick="setCategoryFilter('code', this)">CODE & DATA</div>
+
+                        <div style="display: flex; gap: 4px; margin-left: 12px;">
+                            <button class="btn btn-secondary btn-sm" id="btnViewGrid" onclick="toggleViewMode('grid')">GRID</button>
+                            <button class="btn btn-secondary btn-sm" id="btnViewList" onclick="toggleViewMode('list')">LIST</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FILE GRID CONTAINER (WITH HARD COLOR INVERSION ON HOVER) -->
+                <div id="filesGrid" class="files-grid">
+                    <!-- Dynamic Cards Injected -->
+                </div>
+
+                <!-- FILE LIST CONTAINER -->
+                <div id="filesList" class="files-list hidden">
+                    <div class="list-header">
+                        <div>FILE NAME / PATH</div>
+                        <div>SIZE</div>
+                        <div>STORAGE TIER</div>
+                        <div>LAST ACCESSED</div>
+                        <div style="text-align: right;">ACTIONS</div>
+                    </div>
+                    <div id="listRowsContainer">
+                        <!-- Dynamic List Rows Injected -->
+                    </div>
+                </div>
+
+                <!-- SYSTEM ACTIVITY TELEMETRY LOG TABLE -->
+                <div id="logsSection" class="logs-card" style="margin-top: 64px;">
+                    <div class="logs-header">
+                        <span>SYSTEM TELEMETRY & OPERATION LATENCY LOG</span>
+                        <button class="btn btn-secondary btn-sm" onclick="clearLogs()">CLEAR LOG</button>
+                    </div>
+                    <table class="logs-table">
+                        <thead>
+                            <tr>
+                                <th>TIMESTAMP</th>
+                                <th>OPERATION EVENT</th>
+                                <th>TARGET FILE KEY</th>
+                                <th style="text-align: right;">LATENCY</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logsTableBody">
+                            <!-- Injected log rows -->
+                        </tbody>
+                    </table>
+                </div>
+
+            </main>
+        </div>
+    </div>
+
+    <!-- PREVIEW LIGHTBOX MODAL -->
+    <div id="previewModal" class="hidden">
+        <div class="preview-box">
+            <div class="preview-header">
+                <span id="previewModalTitle" style="font-family: var(--font-display); font-size: 18px; font-weight: 700; text-transform: uppercase;">OBJECT PREVIEW</span>
+                <button class="btn btn-secondary btn-sm" onclick="closePreviewModal()">CLOSE</button>
+            </div>
+            <div class="preview-body" id="previewModalContent">
+                <!-- Injected Preview Content -->
             </div>
         </div>
     </div>
 
     <script>
-        const API_URL = 'http://localhost:3000/api/files';
+        const API_BASE = '/api/v1/gateway';
+        let currentTenantId = 'tenant-alex';
+        let currentUserName = 'ALEX MORGAN';
+        let tenantFiles = [];
+        let viewMode = 'grid';
+        let currentCategory = 'all';
+        let activeNav = 'all';
 
-        function log(event, duration = null) {
-            const tbody = document.getElementById('logBody');
+        // Initialize App
+        window.addEventListener('DOMContentLoaded', () => {
+            initRegisteredUsers();
+
+            const savedSession = localStorage.getItem('cloudvault_active_session');
+            if (savedSession) {
+                try {
+                    const sessionData = JSON.parse(savedSession);
+                    currentTenantId = sessionData.tenantId;
+                    currentUserName = sessionData.name;
+                } catch {
+                    currentTenantId = 'tenant-alex';
+                    currentUserName = 'ALEX MORGAN';
+                }
+            } else {
+                currentTenantId = 'tenant-alex';
+                currentUserName = 'ALEX MORGAN';
+                saveSession(currentTenantId, currentUserName);
+            }
+
+            showAppUI();
+        });
+
+        function initRegisteredUsers() {
+            const existing = localStorage.getItem('cloudvault_users_db');
+            if (!existing) {
+                const defaultUsers = [
+                    { name: 'ALEX MORGAN', tenantId: 'tenant-alex', password: 'password123' },
+                    { name: 'TECHCORP INC', tenantId: 'tenant-techcorp', password: 'password123' }
+                ];
+                localStorage.setItem('cloudvault_users_db', JSON.stringify(defaultUsers));
+            }
+        }
+
+        function getRegisteredUsers() {
+            try {
+                return JSON.parse(localStorage.getItem('cloudvault_users_db')) || [];
+            } catch {
+                return [];
+            }
+        }
+
+        function openAuthModal() {
+            document.getElementById('authOverlay').classList.remove('hidden');
+        }
+
+        function closeAuthModal() {
+            document.getElementById('authOverlay').classList.add('hidden');
+        }
+
+        function switchAuthTab(tab) {
+            document.getElementById('tabSignIn').classList.toggle('active', tab === 'signin');
+            document.getElementById('tabSignUp').classList.toggle('active', tab === 'signup');
+            document.getElementById('formSignIn').classList.toggle('hidden', tab !== 'signin');
+            document.getElementById('formSignUp').classList.toggle('hidden', tab !== 'signup');
+        }
+
+        function handleAuthLogin(e) {
+            e.preventDefault();
+            const tenantInput = document.getElementById('authTenantId').value.trim();
+            const passwordInput = document.getElementById('authPassword').value.trim();
+
+            if (!tenantInput || !passwordInput) return alert('USERNAME & PASSWORD REQUIRED');
+
+            const users = getRegisteredUsers();
+            const found = users.find(u => u.tenantId.toLowerCase() === tenantInput.toLowerCase() || u.name.toLowerCase() === tenantInput.toLowerCase());
+
+            if (found) {
+                currentTenantId = found.tenantId;
+                currentUserName = found.name;
+            } else {
+                currentTenantId = tenantInput.toLowerCase().startsWith('tenant-') ? tenantInput.toLowerCase() : `tenant-${tenantInput.toLowerCase()}`;
+                currentUserName = tenantInput.toUpperCase();
+            }
+
+            saveSession(currentTenantId, currentUserName);
+            closeAuthModal();
+            showAppUI();
+        }
+
+        function handleAuthRegister(e) {
+            e.preventDefault();
+            const regName = document.getElementById('regName').value.trim().toUpperCase();
+            const regTenantId = document.getElementById('regTenantId').value.trim().toLowerCase();
+            const regPassword = document.getElementById('regPassword').value.trim();
+
+            if (!regName || !regTenantId || !regPassword) return alert('ALL FIELDS REQUIRED');
+
+            const users = getRegisteredUsers();
+            const formattedTenant = regTenantId.startsWith('tenant-') ? regTenantId : `tenant-${regTenantId}`;
+
+            if (users.some(u => u.tenantId === formattedTenant)) {
+                return alert('TENANT ID ALREADY REGISTERED. PLEASE SIGN IN.');
+            }
+
+            const newUser = { name: regName, tenantId: formattedTenant, password: regPassword };
+            users.push(newUser);
+            localStorage.setItem('cloudvault_users_db', JSON.stringify(users));
+
+            saveSession(formattedTenant, regName);
+            closeAuthModal();
+            showAppUI();
+        }
+
+        function quickLogin(tenantId, name) {
+            saveSession(tenantId, name);
+            closeAuthModal();
+            showAppUI();
+        }
+
+        function saveSession(tenantId, name) {
+            currentTenantId = tenantId;
+            currentUserName = name;
+            const session = { tenantId, name, loginTime: Date.now() };
+            localStorage.setItem('cloudvault_active_session', JSON.stringify(session));
+        }
+
+        function logout() {
+            localStorage.removeItem('cloudvault_active_session');
+            openAuthModal();
+        }
+
+        function showAppUI() {
+            document.getElementById('userName').textContent = currentUserName;
+            logTelemetry('SESSION ACTIVE', currentTenantId, '0MS');
+            fetchTenantFiles();
+        }
+
+        // Fetch Files from Backend
+        async function fetchTenantFiles() {
+            try {
+                const res = await fetch(`${API_BASE}/files`, {
+                    headers: { 'x-tenant-id': currentTenantId }
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                tenantFiles = data.files || [];
+                renderDashboard();
+            } catch (err) {
+                console.warn('Failed to fetch from backend:', err);
+                logTelemetry('LIST FILES WARN', err.message, '-');
+            }
+        }
+
+        function renderDashboard() {
+            const totalCount = tenantFiles.length;
+            const hotCount = tenantFiles.filter(f => f.currentTier === 'HOT').length;
+            const coldCount = tenantFiles.filter(f => f.currentTier === 'COLD').length;
+            const totalBytes = tenantFiles.reduce((acc, f) => acc + (f.sizeBytes || 0), 0);
+
+            document.getElementById('countAllFiles').textContent = totalCount;
+            document.getElementById('countHotFiles').textContent = hotCount;
+            document.getElementById('countColdFiles').textContent = coldCount;
+
+            document.getElementById('metricTotalFiles').textContent = totalCount;
+            document.getElementById('metricTotalBytes').textContent = formatBytes(totalBytes);
+            document.getElementById('metricHotCount').textContent = hotCount;
+            document.getElementById('metricColdCount').textContent = coldCount;
+
+            const quotaMB = (totalBytes / (1024 * 1024)).toFixed(1);
+            document.getElementById('quotaText').textContent = `${quotaMB} MB OF 100 MB USED`;
+            const fillPct = Math.min(100, (totalBytes / (100 * 1024 * 1024)) * 100);
+            document.getElementById('quotaFill').style.width = `${fillPct}%`;
+
+            renderFileList();
+        }
+
+        function renderFileList() {
+            const gridContainer = document.getElementById('filesGrid');
+            const listContainer = document.getElementById('listRowsContainer');
+            gridContainer.innerHTML = '';
+            listContainer.innerHTML = '';
+
+            const query = document.getElementById('searchQuery').value.toLowerCase().trim();
+
+            let filtered = tenantFiles.filter(f => {
+                if (activeNav === 'hot' && f.currentTier !== 'HOT') return false;
+                if (activeNav === 'cold' && f.currentTier !== 'COLD') return false;
+
+                if (query && !f.filePath.toLowerCase().includes(query) && !f.fileName.toLowerCase().includes(query)) {
+                    return false;
+                }
+
+                if (currentCategory === 'image' && !isImageType(f.fileName)) return false;
+                if (currentCategory === 'document' && !isDocType(f.fileName)) return false;
+                if (currentCategory === 'code' && !isCodeType(f.fileName)) return false;
+
+                return true;
+            });
+
+            if (filtered.length === 0) {
+                const emptyHTML = `
+                    <div style="grid-column: 1 / -1; padding: 64px 24px; text-align: center; color: var(--fg-muted);">
+                        <h4 style="font-family: var(--font-display); font-size: 24px; color: var(--fg-main);">NO OBJECTS IN VAULT</h4>
+                        <p style="font-size: 14px; margin-top: 8px;">Upload file objects using the ingestion stream dropzone above.</p>
+                    </div>
+                `;
+                gridContainer.innerHTML = emptyHTML;
+                listContainer.innerHTML = emptyHTML;
+                return;
+            }
+
+            filtered.forEach((f) => {
+                const sizeStr = formatBytes(f.sizeBytes);
+
+                const card = document.createElement('div');
+                card.className = 'file-card';
+                card.innerHTML = `
+                    <div>
+                        <div class="file-name" title="${escapeHtml(f.fileName)}">${escapeHtml(f.fileName)}</div>
+                        <div class="file-meta-text">${sizeStr}</div>
+                        <div class="tier-badge">${f.currentTier} TIER</div>
+                    </div>
+                    <div class="file-actions">
+                        <button class="action-btn" onclick="downloadFile('${escapeHtml(f.filePath)}', 'cache')" title="Fast Cache Download (~3.8ms)">CACHE</button>
+                        <button class="action-btn" onclick="downloadFile('${escapeHtml(f.filePath)}', 's3')" title="Direct Cloud Download">S3</button>
+                        <button class="action-btn" onclick="previewFile('${escapeHtml(f.filePath)}')">PREVIEW</button>
+                        <button class="action-btn" onclick="deleteFile('${escapeHtml(f.filePath)}')">DELETE</button>
+                    </div>
+                `;
+                gridContainer.appendChild(card);
+
+                const row = document.createElement('div');
+                row.className = 'list-row';
+                row.innerHTML = `
+                    <div style="font-family: var(--font-display); font-size: 16px; font-weight: 700;">${escapeHtml(f.fileName)}</div>
+                    <div>${sizeStr}</div>
+                    <div><span class="tier-badge">${f.currentTier}</span></div>
+                    <div style="font-size: 11px; color: var(--fg-muted); font-family: var(--font-mono);">${new Date(f.lastAccessedAt || Date.now()).toLocaleTimeString()}</div>
+                    <div style="display: flex; gap: 6px; justify-content: flex-end;">
+                        <button class="action-btn" style="padding: 6px 12px;" onclick="downloadFile('${escapeHtml(f.filePath)}', 'cache')">CACHE</button>
+                        <button class="action-btn" style="padding: 6px 12px;" onclick="downloadFile('${escapeHtml(f.filePath)}', 's3')">S3</button>
+                        <button class="action-btn" style="padding: 6px 12px;" onclick="deleteFile('${escapeHtml(f.filePath)}')">DEL</button>
+                    </div>
+                `;
+                listContainer.appendChild(row);
+            });
+        }
+
+        // Upload Stream Handler
+        async function uploadFileStream(fileObj) {
+            if (!fileObj) return;
+            const statusDiv = document.getElementById('uploadStatusMessage');
+            const customPath = document.getElementById('customFilePathInput').value.trim();
+            const targetPath = customPath || fileObj.name;
+
+            statusDiv.textContent = `STREAMING ${fileObj.name.toUpperCase()} TO GATEWAY...`;
+            logTelemetry('UPLOAD STARTED', targetPath, 'CONNECTING...');
+
+            const formData = new FormData();
+            formData.append('file', fileObj);
+            formData.append('filePath', targetPath);
+
+            const startTime = performance.now();
+
+            try {
+                const res = await fetch(`${API_BASE}/upload`, {
+                    method: 'POST',
+                    headers: { 'x-tenant-id': currentTenantId },
+                    body: formData
+                });
+
+                const data = await res.json();
+                const duration = (performance.now() - startTime).toFixed(0);
+
+                if (res.ok) {
+                    statusDiv.textContent = `UPLOAD COMPLETE: ${fileObj.name.toUpperCase()}`;
+                    logTelemetry('WRITE COMPLETE (S3 + DISK)', targetPath, `${duration}MS`);
+                    document.getElementById('customFilePathInput').value = '';
+                    setTimeout(() => statusDiv.textContent = '', 3000);
+                    fetchTenantFiles();
+                } else {
+                    throw new Error(data.error || 'Upload failed');
+                }
+            } catch (err) {
+                statusDiv.textContent = `UPLOAD ERROR: ${err.message.toUpperCase()}`;
+                logTelemetry('UPLOAD FAILED', err.message, '-');
+            }
+        }
+
+        function handleFileSelect(e) {
+            if (e.target.files && e.target.files[0]) {
+                uploadFileStream(e.target.files[0]);
+            }
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            document.getElementById('dropzone').classList.add('drag-over');
+        }
+
+        function handleDragLeave(e) {
+            e.preventDefault();
+            document.getElementById('dropzone').classList.remove('drag-over');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            document.getElementById('dropzone').classList.remove('drag-over');
+            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                uploadFileStream(e.dataTransfer.files[0]);
+            }
+        }
+
+        // File Retrieval Operations
+        async function downloadFile(filePath, mode) {
+            const label = mode === 's3' ? 'DIRECT S3' : 'DISK CACHE';
+            logTelemetry(`DOWNLOAD REQUEST (${label})`, filePath, 'FETCHING...');
+
+            const startTime = performance.now();
+            try {
+                const res = await fetch(`${API_BASE}/download?filePath=${encodeURIComponent(filePath)}`, {
+                    headers: { 'x-tenant-id': currentTenantId }
+                });
+
+                if (res.status === 202) {
+                    const data = await res.json();
+                    alert(data.message);
+                    logTelemetry('GLACIER RESTORE TRIGGERED', filePath, '3-5 HOURS');
+                    return;
+                }
+
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+                const blob = await res.blob();
+                const duration = (performance.now() - startTime).toFixed(0);
+                logTelemetry(`RETRIEVED VIA ${label}`, filePath, `${duration}MS`);
+
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filePath.split('/').pop() || 'download.bin';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            } catch (err) {
+                logTelemetry('DOWNLOAD ERROR', err.message, '-');
+                alert(`Download error: ${err.message}`);
+            }
+        }
+
+        async function previewFile(filePath) {
+            const modal = document.getElementById('previewModal');
+            const content = document.getElementById('previewModalContent');
+            const title = document.getElementById('previewModalTitle');
+
+            title.textContent = `OBJECT PREVIEW: ${filePath.toUpperCase()}`;
+            content.innerHTML = '<div style="padding: 20px; font-family: var(--font-mono);">FETCHING FILE STREAM...</div>';
+            modal.classList.remove('hidden');
+
+            try {
+                const res = await fetch(`${API_BASE}/download?filePath=${encodeURIComponent(filePath)}`, {
+                    headers: { 'x-tenant-id': currentTenantId }
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+                const blob = await res.blob();
+                const fileName = filePath.split('/').pop() || '';
+
+                if (isImageType(fileName)) {
+                    const url = URL.createObjectURL(blob);
+                    content.innerHTML = `<img src="${url}" class="preview-img" alt="preview">`;
+                } else if (isCodeType(fileName) || isDocType(fileName)) {
+                    const text = await blob.text();
+                    content.innerHTML = `<div class="preview-text">${escapeHtml(text.slice(0, 5000))}</div>`;
+                } else {
+                    content.innerHTML = `
+                        <div style="padding: 32px; font-family: var(--font-mono);">
+                            <h4>BINARY FORMAT DATA OBJECT (${formatBytes(blob.size)})</h4>
+                            <button class="btn btn-primary btn-sm" style="margin-top: 16px;" onclick="downloadFile('${escapeHtml(filePath)}', 'cache')">DOWNLOAD OBJECT</button>
+                        </div>
+                    `;
+                }
+            } catch (err) {
+                content.innerHTML = `<div style="color: var(--fg-main); font-family: var(--font-mono);">FAILED TO LOAD PREVIEW: ${err.message}</div>`;
+            }
+        }
+
+        function closePreviewModal() {
+            document.getElementById('previewModal').classList.add('hidden');
+        }
+
+        async function deleteFile(filePath) {
+            if (!confirm(`ARE YOU SURE YOU WANT TO DELETE ${filePath}?`)) return;
+
+            try {
+                const res = await fetch(`${API_BASE}/files?filePath=${encodeURIComponent(filePath)}`, {
+                    method: 'DELETE',
+                    headers: { 'x-tenant-id': currentTenantId }
+                });
+                if (res.ok) {
+                    logTelemetry('FILE DELETED', filePath, '0MS');
+                    fetchTenantFiles();
+                } else {
+                    throw new Error('Delete failed');
+                }
+            } catch (err) {
+                alert(`Error deleting file: ${err.message}`);
+            }
+        }
+
+        // Telemetry Logging
+        function logTelemetry(event, key, latency) {
+            const tbody = document.getElementById('logsTableBody');
             const row = document.createElement('tr');
 
             const time = new Date().toLocaleTimeString([], { hour12: false });
-            const metric = duration ? `${duration}ms` : '-';
-
             row.innerHTML = `
-                <td class="col-time">${time}</td>
-                <td>${event}</td>
-                <td class="col-metric">${metric}</td>
+                <td style="color: var(--fg-muted);">${time}</td>
+                <td style="font-weight: 700; color: var(--fg-main);">${escapeHtml(event)}</td>
+                <td style="color: var(--fg-muted);">${escapeHtml(key || '-')}</td>
+                <td style="text-align: right;"><span class="latency-badge">${latency}</span></td>
             `;
 
             tbody.prepend(row);
         }
 
-        async function uploadFile() {
-            const fileInput = document.getElementById('fileInput');
-            const statusDiv = document.getElementById('uploadStatus');
+        function clearLogs() {
+            document.getElementById('logsTableBody').innerHTML = '';
+        }
 
-            if (!fileInput.files[0]) return alert("Input required.");
+        // Nav and Filter Handlers
+        function switchNavTab(tab, el) {
+            activeNav = tab;
+            document.querySelectorAll('.sidebar .nav-item').forEach(item => item.classList.remove('active'));
 
-            const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
-            const fileName = fileInput.files[0].name;
-
-            statusDiv.textContent = "Processing upload stream...";
-            log(`Upload Started: ${fileName}`);
-
-            const startTime = performance.now();
-
-            try {
-                const res = await fetch(`${API_URL}/upload`, { method: 'POST', body: formData });
-                const data = await res.json();
-                const duration = (performance.now() - startTime).toFixed(0);
-
-                if (res.ok) {
-                    statusDiv.textContent = "Upload complete.";
-                    log(`Write Complete (S3 + Disk)`, duration);
-                    addFileToList(data.s3Key, fileName);
-                    fileInput.value = '';
-                    setTimeout(() => statusDiv.textContent = '', 2000);
-                } else {
-                    throw new Error(data.error || "Failed");
-                }
-            } catch (err) {
-                statusDiv.textContent = "Error.";
-                log(`Upload Error: ${err.message}`);
+            if (tab === 'logs') {
+                document.getElementById('logsSection').scrollIntoView({ behavior: 'smooth' });
+                return;
             }
+
+            if (el) el.classList.add('active');
+            renderFileList();
         }
 
-        async function testDownload(key, source) {
-            // source: 'disk' or 'cloud'
-            const isCloud = source === 'cloud';
-            const url = `${API_URL}/download/${key}${isCloud ? '?nocache=true' : ''}`;
-
-            const label = isCloud ? "S3 Fetch" : "Disk Cache";
-            log(`Request: ${label}...`);
-
-            const startTime = performance.now();
-            try {
-                const res = await fetch(url);
-                if (!res.ok) throw new Error("Failed");
-                await res.blob(); // Ensure full download
-
-                const duration = (performance.now() - startTime).toFixed(0);
-                log(`${label} Retrieved`, duration);
-
-            } catch (err) {
-                log(`Retrieval Error: ${err.message}`);
-            }
+        function setCategoryFilter(cat, btn) {
+            currentCategory = cat;
+            document.querySelectorAll('.filter-pill').forEach(el => el.classList.remove('active'));
+            btn.classList.add('active');
+            renderFileList();
         }
 
-        function addFileToList(key, name) {
-            const list = document.getElementById('fileList');
-            const item = document.createElement('div');
-            item.className = 'repo-item';
-
-            const displayName = name || key;
-
-            item.innerHTML = `
-                <div class="repo-name">${displayName}</div>
-                <div class="action-group">
-                    <button class="outline" onclick="testDownload('${key}', 'disk')">Cache</button>
-                    <button class="outline" onclick="testDownload('${key}', 'cloud')">S3</button>
-                </div>
-            `;
-            list.prepend(item);
+        function toggleViewMode(mode) {
+            viewMode = mode;
+            document.getElementById('filesGrid').classList.toggle('hidden', mode === 'list');
+            document.getElementById('filesList').classList.toggle('hidden', mode === 'grid');
         }
 
-        // Initial Log
-        log('System Initialized');
+        function handleSearch() {
+            renderFileList();
+        }
+
+        // Helpers
+        function formatBytes(bytes) {
+            if (!bytes || bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+
+        function isImageType(name = '') {
+            return /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(name);
+        }
+
+        function isDocType(name = '') {
+            return /\.(pdf|doc|docx|txt|md|rtf)$/i.test(name);
+        }
+
+        function isCodeType(name = '') {
+            return /\.(js|json|html|css|py|java|c|cpp|bin|dat)$/i.test(name);
+        }
+
+        function escapeHtml(str = '') {
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
     </script>
 </body>
 
