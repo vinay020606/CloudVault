@@ -1037,14 +1037,14 @@
                 <!-- DRAG AND DROP INGESTION CARD -->
                 <div class="dropzone-card" id="dropzone" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
                     <h2 class="dropzone-title">DATA INGESTION STREAM</h2>
-                    <p class="dropzone-sub">Drag and drop file objects here or browse from local storage</p>
+                    <p class="dropzone-sub">Drag and drop file objects here or click below to browse from disk</p>
 
                     <div class="upload-controls">
-                        <input type="file" id="fileInputSelect" class="hidden" onchange="handleFileSelect(event)">
+                        <input type="file" id="fileInputSelect" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0;" onchange="handleFileSelect(event)">
                         <input type="text" id="customFilePathInput" class="form-input" placeholder="CUSTOM VAULT PATH (E.G. DOCS/FILE.PDF)">
-                        <button class="btn btn-primary" onclick="document.getElementById('fileInputSelect').click()">
+                        <label for="fileInputSelect" class="btn btn-primary" style="cursor: pointer;">
                             <span>CHOOSE FILE</span>
-                        </button>
+                        </label>
                     </div>
                     <div id="uploadStatusMessage" style="margin-top: 20px; font-family: var(--font-mono); font-size: 13px; font-weight: 700;"></div>
                 </div>
