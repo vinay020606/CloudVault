@@ -373,4 +373,51 @@ router.post('/invalidate', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/v1/gateway/s3-event
+ * AWS S3 Direct Event Notification Webhook
+ * Triggered directly by S3 Event Notifications (ObjectCreated:* / ObjectRemoved:*)
+ */
+router.post('/s3-event', async (req, res) => {
+  try {
+    const records = req.body?.Records || [];
+    let processedCount = 0;
+
+    for (const record of records) {
+      const eventName = record.eventName || '';
+      const rawKey = record.s3?.object?.key || '';
+      const s3Key = decodeURIComponent(rawKey.replace(/\+/g, ' '));
+
+      if (!s3Key) continue;
+
+      // Extract tenantId and userPath from key format: tenants/<tenantId>/<userPath>
+      const match = s3Key.match(/^tenants\/([^/]+)\/(.+)$/);
+      if (match) {
+        const tenantId = match[1];
+        const filePath = match[2];
+
+        // Purge local disk cache
+        await invalidateFileCache(tenantId, filePath);
+
+        // If object was deleted directly in S3, delete metadata record
+        if (eventName.startsWith('ObjectRemoved:')) {
+          await deleteFileRecord(tenantId, filePath);
+        }
+
+        console.log(`[S3 Direct Event] ${eventName} for ${s3Key} -> Purged local disk cache for ${tenantId}:${filePath}`);
+        processedCount++;
+      }
+    }
+
+    return res.json({
+      status: 'SUCCESS',
+      message: `Direct S3 Event Notifications processed (${processedCount} records)`,
+      processedCount,
+    });
+  } catch (err) {
+    console.error('[S3 Direct Event Error]:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
