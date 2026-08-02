@@ -1039,15 +1039,32 @@
                     <h2 class="dropzone-title">DATA INGESTION STREAM</h2>
                     <p class="dropzone-sub">Drag and drop file objects here or click below to browse from disk</p>
 
-                    <div class="upload-controls" style="position: relative; display: flex; align-items: center; justify-content: center; gap: 16px;">
-                        <input type="text" id="customFilePathInput" class="form-input" placeholder="CUSTOM VAULT PATH (E.G. DOCS/FILE.PDF)">
+                    <div class="upload-controls" style="position: relative; display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap;">
+                        <input type="text" id="customFilePathInput" class="form-input" placeholder="CUSTOM VAULT PATH (E.G. DOCS/FILE.PDF)" style="max-width: 320px;">
                         
                         <label class="btn btn-primary" style="position: relative; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; overflow: hidden;">
                             <span>CHOOSE FILE</span>
                             <input type="file" id="fileInputSelect" onchange="handleFileSelect(event)" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 10;">
                         </label>
                     </div>
-                    <div id="uploadStatusMessage" style="margin-top: 20px; font-family: var(--font-mono); font-size: 13px; font-weight: 700;"></div>
+
+                    <!-- SELECTED FILE PREVIEW & UPLOAD TRIGGER PANEL -->
+                    <div id="selectedFilePanel" class="hidden" style="margin-top: 32px; padding: 28px; border: 2px solid var(--border-black); background: var(--bg-muted); text-align: center;">
+                        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--fg-muted); letter-spacing: 0.15em;">READY FOR INGESTION</div>
+                        <div id="selectedFileName" style="font-family: var(--font-display); font-size: 24px; font-weight: 900; margin: 10px 0; word-break: break-all;"></div>
+                        <div id="selectedFileSize" style="font-family: var(--font-mono); font-size: 12px; color: var(--fg-muted); margin-bottom: 24px;"></div>
+
+                        <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+                            <button type="button" class="btn btn-primary" id="btnStartUpload" onclick="startSelectedFileUpload()">
+                                <span>🚀 UPLOAD FILE TO VAULT</span>
+                            </button>
+                            <button type="button" class="btn btn-secondary" onclick="cancelSelectedFile()">
+                                <span>✕ CANCEL</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="uploadStatusMessage" style="margin-top: 24px; font-family: var(--font-mono); font-size: 13px; font-weight: 700;"></div>
                 </div>
 
                 <!-- TOOLBAR & FILTERS -->
@@ -1413,6 +1430,8 @@
             }
         }
 
+        let pendingFileObject = null;
+
         function triggerFileInput() {
             const input = document.getElementById('fileInputSelect');
             if (input) input.click();
@@ -1420,8 +1439,35 @@
 
         function handleFileSelect(e) {
             if (e.target.files && e.target.files[0]) {
-                uploadFileStream(e.target.files[0]);
+                setSelectedFile(e.target.files[0]);
             }
+        }
+
+        function setSelectedFile(fileObj) {
+            pendingFileObject = fileObj;
+            document.getElementById('selectedFileName').textContent = fileObj.name.toUpperCase();
+            document.getElementById('selectedFileSize').textContent = formatBytes(fileObj.size);
+            document.getElementById('selectedFilePanel').classList.remove('hidden');
+            document.getElementById('uploadStatusMessage').textContent = '';
+
+            const pathInput = document.getElementById('customFilePathInput');
+            if (!pathInput.value) {
+                pathInput.value = fileObj.name;
+            }
+        }
+
+        function cancelSelectedFile() {
+            pendingFileObject = null;
+            document.getElementById('fileInputSelect').value = '';
+            document.getElementById('selectedFilePanel').classList.add('hidden');
+            document.getElementById('uploadStatusMessage').textContent = '';
+        }
+
+        async function startSelectedFileUpload() {
+            if (!pendingFileObject) return alert('NO FILE SELECTED');
+            const file = pendingFileObject;
+            await uploadFileStream(file);
+            cancelSelectedFile();
         }
 
         function handleDragOver(e) {
@@ -1438,7 +1484,7 @@
             e.preventDefault();
             document.getElementById('dropzone').classList.remove('drag-over');
             if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                uploadFileStream(e.dataTransfer.files[0]);
+                setSelectedFile(e.dataTransfer.files[0]);
             }
         }
 
