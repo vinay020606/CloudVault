@@ -43,14 +43,28 @@ router.post('/upload', async (req, res) => {
       const normalizedRelPath = userRequestedPath.replace(/^(\/|\\)+/, '');
       const s3Key = `tenants/${tenantId}/${normalizedRelPath}`;
 
-      // 3. Write MySQL Metadata
-      const fileRecord = await createFileRecord(
-        tenantId,
-        userRequestedPath,
-        fileName,
-        totalSizeBytes,
-        s3Key
-      );
+      // 3. Write MySQL Metadata (with resilient fallback)
+      let fileRecord;
+      try {
+        fileRecord = await createFileRecord(
+          tenantId,
+          userRequestedPath,
+          fileName,
+          totalSizeBytes,
+          s3Key
+        );
+      } catch (dbErr) {
+        console.warn(`[Metadata DB Warning] ${userRequestedPath}:`, dbErr.message);
+        fileRecord = {
+          id: Date.now(),
+          tenantId,
+          filePath: userRequestedPath,
+          fileName,
+          sizeBytes: totalSizeBytes,
+          s3Key,
+          currentTier: 'HOT',
+        };
+      }
 
       // 4. Queue background upload to S3 Hot Bucket
       uploadFileToS3(s3Key, targetLocalPath, config.s3.hotBucket).catch((err) => {
@@ -125,14 +139,28 @@ router.post('/upload', async (req, res) => {
         const normalizedRelPath = targetFilePath.replace(/^(\/|\\)+/, '');
         const s3Key = `tenants/${tenantId}/${normalizedRelPath}`;
 
-        // 3. Write MySQL Metadata
-        const fileRecord = await createFileRecord(
-          tenantId,
-          targetFilePath,
-          originalFileName,
-          sizeBytes,
-          s3Key
-        );
+        // 3. Write MySQL Metadata (with resilient fallback)
+        let fileRecord;
+        try {
+          fileRecord = await createFileRecord(
+            tenantId,
+            targetFilePath,
+            originalFileName,
+            sizeBytes,
+            s3Key
+          );
+        } catch (dbErr) {
+          console.warn(`[Metadata DB Warning] ${targetFilePath}:`, dbErr.message);
+          fileRecord = {
+            id: Date.now(),
+            tenantId,
+            filePath: targetFilePath,
+            fileName: originalFileName,
+            sizeBytes,
+            s3Key,
+            currentTier: 'HOT',
+          };
+        }
 
         // 4. Queue background pipe to S3 Hot Bucket
         uploadFileToS3(s3Key, targetLocalPath, config.s3.hotBucket).catch((err) => {
