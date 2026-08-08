@@ -1397,13 +1397,13 @@
             logTelemetry('UPLOAD STARTED', targetPath, 'CONNECTING...');
 
             const formData = new FormData();
-            formData.append('file', fileObj);
             formData.append('filePath', targetPath);
+            formData.append('file', fileObj);
 
             const startTime = performance.now();
 
             try {
-                const res = await fetch(`${API_BASE}/upload`, {
+                const res = await fetch(`${API_BASE}/upload?filePath=${encodeURIComponent(targetPath)}`, {
                     method: 'POST',
                     headers: { 'x-tenant-id': currentTenantId },
                     body: formData
@@ -1417,6 +1417,7 @@
                     logTelemetry('WRITE COMPLETE (S3 + DISK)', targetPath, `${duration}MS`);
                     document.getElementById('customFilePathInput').value = '';
                     setTimeout(() => statusDiv.textContent = '', 3000);
+                    alert(`✅ UPLOAD COMPLETE: ${fileObj.name.toUpperCase()} HAS BEEN STORED IN VAULT & S3!`);
                     fetchTenantFiles();
                 } else {
                     throw new Error(data.error || 'Upload failed');
@@ -1424,6 +1425,7 @@
             } catch (err) {
                 statusDiv.textContent = `UPLOAD ERROR: ${err.message.toUpperCase()}`;
                 logTelemetry('UPLOAD FAILED', err.message, '-');
+                alert(`❌ UPLOAD ERROR: ${err.message}`);
             }
         }
 
