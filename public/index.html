@@ -73,12 +73,12 @@
         /* Hero Display Statement */
         .hero-statement {
             font-family: var(--font-display);
-            font-size: clamp(2.8rem, 7.5vw, 8rem);
-            line-height: 0.95;
+            font-size: clamp(2rem, 4.5vw, 3.8rem);
+            line-height: 1.05;
             font-weight: 900;
             color: var(--fg-main);
-            margin-bottom: 24px;
-            letter-spacing: -0.03em;
+            margin-bottom: 16px;
+            letter-spacing: -0.02em;
         }
 
         .hero-statement em {
@@ -531,7 +531,7 @@
 
         .metric-value {
             font-family: var(--font-display);
-            font-size: 52px;
+            font-size: 36px;
             font-weight: 900;
             color: var(--fg-inverse);
             line-height: 1;
@@ -1037,32 +1037,29 @@
                 <!-- DRAG AND DROP INGESTION CARD -->
                 <div class="dropzone-card" id="dropzone" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
                     <h2 class="dropzone-title">DATA INGESTION STREAM</h2>
-                    <p class="dropzone-sub">Drag and drop file objects here or click below to browse from disk</p>
+                    <p class="dropzone-sub">Select a file from your computer or drag and drop it into this box</p>
 
-                    <div class="upload-controls" style="position: relative; display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap;">
-                        <input type="text" id="customFilePathInput" class="form-input" placeholder="CUSTOM VAULT PATH (E.G. DOCS/FILE.PDF)" style="max-width: 320px;">
+                    <form onsubmit="handleDirectUploadForm(event)" style="max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; align-items: center;">
                         
-                        <label for="fileInputSelect" class="btn btn-primary" style="position: relative; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; overflow: hidden;">
-                            <span>CHOOSE FILE</span>
-                            <input type="file" id="fileInputSelect" onchange="handleFileSelect(event)" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 10;">
-                        </label>
-                    </div>
-
-                    <!-- SELECTED FILE PREVIEW & UPLOAD TRIGGER PANEL -->
-                    <div id="selectedFilePanel" class="hidden" style="margin-top: 32px; padding: 28px; border: 2px solid var(--border-black); background: var(--bg-muted); text-align: center;">
-                        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--fg-muted); letter-spacing: 0.15em;">READY FOR INGESTION</div>
-                        <div id="selectedFileName" style="font-family: var(--font-display); font-size: 24px; font-weight: 900; margin: 10px 0; word-break: break-all;"></div>
-                        <div id="selectedFileSize" style="font-family: var(--font-mono); font-size: 12px; color: var(--fg-muted); margin-bottom: 24px;"></div>
-
-                        <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
-                            <button type="button" class="btn btn-primary" id="btnStartUpload" onclick="startSelectedFileUpload()">
-                                <span>🚀 UPLOAD FILE TO VAULT</span>
-                            </button>
-                            <button type="button" class="btn btn-secondary" onclick="cancelSelectedFile()">
-                                <span>✕ CANCEL</span>
+                        <div style="width: 100%; display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap;">
+                            <!-- VISIBLE STANDARD FILE INPUT -->
+                            <input type="file" id="fileInputSelect" onchange="handleFileSelect(event)" style="font-family: var(--font-mono); font-size: 13px; font-weight: 600; padding: 12px 16px; border: 2px solid var(--border-black); background: var(--bg-muted); cursor: pointer; flex: 1; min-width: 260px;">
+                            
+                            <button type="submit" class="btn btn-primary" style="padding: 14px 28px;">
+                                <span>UPLOAD FILE NOW</span>
                             </button>
                         </div>
-                    </div>
+
+                        <input type="text" id="customFilePathInput" class="form-input" placeholder="OPTIONAL CUSTOM VAULT PATH (E.G. DOCS/FILE.PDF)" style="width: 100%; text-align: center;">
+
+                        <!-- SELECTED FILE PREVIEW PANEL -->
+                        <div id="selectedFilePanel" class="hidden" style="width: 100%; padding: 20px; border: 2px solid var(--border-black); background: var(--bg-muted); text-align: center;">
+                            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--fg-muted); letter-spacing: 0.15em;">READY FOR INGESTION</div>
+                            <div id="selectedFileName" style="font-family: var(--font-display); font-size: 20px; font-weight: 900; margin: 8px 0; word-break: break-all;"></div>
+                            <div id="selectedFileSize" style="font-family: var(--font-mono); font-size: 12px; color: var(--fg-muted);"></div>
+                        </div>
+
+                    </form>
 
                     <div id="uploadStatusMessage" style="margin-top: 24px; font-family: var(--font-mono); font-size: 13px; font-weight: 700;"></div>
                 </div>
@@ -1432,11 +1429,6 @@
 
         let pendingFileObject = null;
 
-        function triggerFileInput() {
-            const input = document.getElementById('fileInputSelect');
-            if (input) input.click();
-        }
-
         function handleFileSelect(e) {
             if (e.target.files && e.target.files[0]) {
                 setSelectedFile(e.target.files[0]);
@@ -1461,6 +1453,20 @@
             document.getElementById('fileInputSelect').value = '';
             document.getElementById('selectedFilePanel').classList.add('hidden');
             document.getElementById('uploadStatusMessage').textContent = '';
+        }
+
+        async function handleDirectUploadForm(e) {
+            e.preventDefault();
+            const input = document.getElementById('fileInputSelect');
+            const file = pendingFileObject || (input.files && input.files[0]);
+
+            if (!file) {
+                alert('PLEASE SELECT A FILE FIRST');
+                return;
+            }
+
+            await uploadFileStream(file);
+            cancelSelectedFile();
         }
 
         async function startSelectedFileUpload() {
