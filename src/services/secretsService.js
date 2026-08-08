@@ -1,7 +1,5 @@
-import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
-
 /**
- * Dynamically fetches JSON secrets from AWS Secrets Manager
+ * Dynamically fetches JSON secrets from AWS Secrets Manager if installed.
  * Prevents hardcoding sensitive credentials in local .env files or git repositories.
  *
  * @param {string} secretName - AWS Secrets Manager Secret ID / Name
@@ -12,6 +10,7 @@ export async function fetchAwsSecret(secretName, region = 'us-east-1') {
   if (!secretName) return null;
 
   try {
+    const { SecretsManagerClient, GetSecretValueCommand } = await import('@aws-sdk/client-secrets-manager');
     const client = new SecretsManagerClient({ region });
     const response = await client.send(
       new GetSecretValueCommand({
@@ -25,7 +24,7 @@ export async function fetchAwsSecret(secretName, region = 'us-east-1') {
       return secret;
     }
   } catch (err) {
-    console.warn(`[Secrets Manager Info] Skipped AWS Secrets Manager lookup (${secretName}):`, err.message);
+    console.warn(`[Secrets Manager Info] AWS Secrets Manager lookup skipped (${secretName}):`, err.message);
   }
   return null;
 }
