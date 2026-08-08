@@ -13,6 +13,8 @@ import proxyRoutes from './routes/proxy.js';
 import healthRoutes from './routes/health.js';
 import requestLogger from './middleware/requestLogger.js';
 
+import { fetchAwsSecret } from './services/secretsService.js';
+
 const app = express();
 
 // Security, CORS, and logging middleware
@@ -31,6 +33,20 @@ app.use('/health', healthRoutes);
 
 async function startServer() {
   console.log('🚀 Starting CloudVault Gateway Server...');
+
+  // Dynamically load secrets from AWS Secrets Manager if configured
+  const secretName = process.env.SECRETS_MANAGER_NAME || process.env.AWS_SECRET_NAME;
+  if (secretName) {
+    const secrets = await fetchAwsSecret(secretName, config.s3.region);
+    if (secrets) {
+      if (secrets.AWS_ACCESS_KEY_ID) config.s3.accessKeyId = secrets.AWS_ACCESS_KEY_ID;
+      if (secrets.AWS_SECRET_ACCESS_KEY) config.s3.secretAccessKey = secrets.AWS_SECRET_ACCESS_KEY;
+      if (secrets.S3_BUCKET_NAME) {
+        config.s3.bucketName = secrets.S3_BUCKET_NAME;
+        config.s3.hotBucket = secrets.S3_BUCKET_NAME;
+      }
+    }
+  }
 
   // Ensure local storage directories exist
   await fs.promises.mkdir(config.storage.blocksDir, { recursive: true });
