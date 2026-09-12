@@ -22,8 +22,10 @@ pids
 coverage/
 *.lcov
 
-# Local Uploads (Cache)
+# Local Uploads & Cache
 uploads/
+storage/
+scratch/
 
 # OS Specific
 .DS_Store
