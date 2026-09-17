@@ -8,6 +8,7 @@ import { initDB } from './db/mysql.js';
 import { getRedisClient } from './db/redis.js';
 import { startEvictionWatcher } from './services/evictionService.js';
 import { startTieringCron } from './workers/tieringWorker.js';
+import { startS3UploadWorker } from './workers/s3UploadWorker.js';
 import gatewayRoutes from './routes/gateway.js';
 import proxyRoutes from './routes/proxy.js';
 import healthRoutes from './routes/health.js';
@@ -67,6 +68,9 @@ async function startServer() {
 
   // Start background Intelligent Storage Tiering Worker
   startTieringCron(86400000); // Nightly scan every 24 hours
+
+  // Start background BullMQ S3 Upload Worker
+  startS3UploadWorker({ concurrency: 5 });
 
   const PORT = config.port;
   app.listen(PORT, '0.0.0.0', () => {

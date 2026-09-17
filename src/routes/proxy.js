@@ -8,6 +8,7 @@ import { createFileRecord, getFileMetadata, touchFileAccess } from '../services/
 import { execute as singleflightExecute } from '../services/singleflightService.js';
 import { touchFile } from '../services/evictionService.js';
 import { uploadFileToS3, downloadFileFromS3, restoreGlacierObject } from '../services/s3Service.js';
+import { addS3UploadJob } from '../services/queueService.js';
 import { getRedisClient } from '../db/redis.js';
 import { query } from '../db/mysql.js';
 
@@ -55,10 +56,16 @@ router.all('/:tenantId/*', async (req, res) => {
         s3Key
       );
 
-      // 4. Background Proxy Pipe to S3 Hot Bucket
-      uploadFileToS3(s3Key, targetLocalPath, config.s3.hotBucket).catch((err) => {
-        console.warn(`[Proxy Background S3 Upload Failed] ${s3Key}:`, err.message);
-      });
+      // 4. Background Proxy Pipe to S3 Hot Bucket via BullMQ Queue
+      addS3UploadJob({ tenantId, filePath: userRequestedPath, targetLocalPath, s3Key })
+        .then((res) => {
+          if (res.status === 'FALLBACK_INLINE') {
+            uploadFileToS3(s3Key, targetLocalPath, config.s3.hotBucket).catch(() => {});
+          }
+        })
+        .catch(() => {
+          uploadFileToS3(s3Key, targetLocalPath, config.s3.hotBucket).catch(() => {});
+        });
 
       // 5. Update Redis LRU
       const redis = getRedisClient();

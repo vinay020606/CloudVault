@@ -9,6 +9,7 @@ import { createFileRecord, getFileMetadata, touchFileAccess, listTenantFiles, de
 import { execute as singleflightExecute } from '../services/singleflightService.js';
 import { touchFile, invalidateFileCache } from '../services/evictionService.js';
 import { uploadFileToS3, downloadFileFromS3, restoreGlacierObject } from '../services/s3Service.js';
+import { addS3UploadJob } from '../services/queueService.js';
 import { getRedisClient } from '../db/redis.js';
 
 const router = express.Router();
@@ -66,10 +67,16 @@ router.post('/upload', async (req, res) => {
         };
       }
 
-      // 4. Queue background upload to S3 Hot Bucket
-      uploadFileToS3(s3Key, targetLocalPath, config.s3.hotBucket).catch((err) => {
-        console.warn(`[Background S3 Upload Failed] ${s3Key}:`, err.message);
-      });
+      // 4. Queue background upload to S3 Hot Bucket via BullMQ Queue
+      addS3UploadJob({ tenantId, filePath: userRequestedPath, targetLocalPath, s3Key })
+        .then((res) => {
+          if (res.status === 'FALLBACK_INLINE') {
+            uploadFileToS3(s3Key, targetLocalPath, config.s3.hotBucket).catch(() => {});
+          }
+        })
+        .catch(() => {
+          uploadFileToS3(s3Key, targetLocalPath, config.s3.hotBucket).catch(() => {});
+        });
 
       // 5. Update Redis LRU
       const redis = getRedisClient();
@@ -162,10 +169,16 @@ router.post('/upload', async (req, res) => {
           };
         }
 
-        // 4. Queue background pipe to S3 Hot Bucket
-        uploadFileToS3(s3Key, targetLocalPath, config.s3.hotBucket).catch((err) => {
-          console.warn(`[Background S3 Sync Error] ${s3Key}:`, err.message);
-        });
+        // 4. Queue background upload to S3 Hot Bucket via BullMQ Queue
+        addS3UploadJob({ tenantId, filePath: targetFilePath, targetLocalPath, s3Key })
+          .then((res) => {
+            if (res.status === 'FALLBACK_INLINE') {
+              uploadFileToS3(s3Key, targetLocalPath, config.s3.hotBucket).catch(() => {});
+            }
+          })
+          .catch(() => {
+            uploadFileToS3(s3Key, targetLocalPath, config.s3.hotBucket).catch(() => {});
+          });
 
         // 5. Update Redis LRU
         const redis = getRedisClient();
