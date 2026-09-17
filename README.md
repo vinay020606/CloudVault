@@ -21,6 +21,9 @@ In cloud architectures, querying AWS S3 directly introduces **180ms+ network lat
 3. **🚀 Singleflight Request Coalescing:** Eliminates Thundering Herd cache miss spikes on S3.
 4. **🧹 Redis LRU Eviction Watcher:** Automatically bounds local SSD storage usage using real-time access scoring.
 5. **🧊 Serverless Intelligent Tiering:** Automatically migrates 30+ day inactive files from S3 Standard to S3 Glacier via AWS Lambda & Amazon EventBridge.
+6. **🐂 BullMQ Background Queue:** Asynchronously queues S3 uploads with exponential backoff retries and rate-limited concurrency.
+
+> 📖 **Deep Dive Documentation:** For a comprehensive technical guide on Node.js streams vs buffers, chunked partial downloads, and BullMQ queue architecture, see [`STREAMS_AND_ASYNC_PROCESSING.md`](file:///c:/Users/jvina/Downloads/CloudVault-main/STREAMS_AND_ASYNC_PROCESSING.md).
 
 ---
 
@@ -44,6 +47,12 @@ graph TD;
         Singleflight-->|7. Single S3 Fetch| HotS3[Hot S3 Bucket: s3://vault-hot-standard];
         HotS3-->|8. Save to SSD & Touch Score| Disk;
         Disk-->|9. Touch Access Timestamp| Redis[(Redis LRU Index ZSET)];
+    end
+
+    subgraph Asynchronous BullMQ Queue & S3 Worker
+        Gateway-->|10. Stream to SSD & Enqueue Metadata| Queue[(BullMQ Redis Queue s3-upload-queue)];
+        Queue-->|11. Pull Job Payload| Worker[BullMQ S3 Upload Worker];
+        Worker-->|12. Stream to S3 with 5x Retries| HotS3;
     end
 
     subgraph Background Maintenance & Eviction
@@ -131,6 +140,14 @@ Optimizes AWS cloud storage costs by splitting files into Hot and Cold S3 bucket
     "s3Key": "tenants/tenant_101/documents/archive.pdf"
   }
   ```
+
+### 6. 🐂 BullMQ Resilient Background Job Queue (`src/services/queueService.js` & `src/workers/s3UploadWorker.js`)
+Decouples client HTTP upload responses from cloud network transmission:
+- **Instant Response:** Gateway streams file to local SSD and returns `201 Created` to client immediately.
+- **Durable Queueing:** Enqueues a 1KB JSON job payload into BullMQ (`s3-upload-queue` backed by Redis).
+- **Exponential Retries:** On network failures, BullMQ retries up to 5 times with exponential backoff (2s, 4s, 8s, 16s, 32s).
+- **Concurrency Rate Limiting:** S3 Upload Worker caps active parallel streams (default: 5 concurrent uploads), preventing memory exhaustion.
+- **Graceful Fallback:** If Redis queue is offline, CloudVault falls back to inline asynchronous execution without dropping requests.
 
 ---
 
