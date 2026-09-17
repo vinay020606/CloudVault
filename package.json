@@ -5,7 +5,7 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node tests/pathSanitizer.test.js && node tests/storage.test.js && node tests/singleflight.test.js && node tests/eviction.test.js && node tests/proxy.test.js && node tests/health.test.js && node tests/tiering.test.js",
+    "test": "node tests/pathSanitizer.test.js && node tests/storage.test.js && node tests/singleflight.test.js && node tests/eviction.test.js && node tests/proxy.test.js && node tests/health.test.js && node tests/tiering.test.js && node tests/queue.test.js",
     "benchmark": "node scripts/benchmark.js"
   },
   "keywords": [],
@@ -15,6 +15,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.990.0",
     "@aws-sdk/lib-storage": "^3.990.0",
+    "bullmq": "^6.3.6",
     "busboy": "^1.6.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
