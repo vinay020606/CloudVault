@@ -151,11 +151,27 @@ Acts as an edge reverse proxy concealing AWS credentials:
 #### **Delete Proxy**
 * **HTTP Method:** `DELETE`
 * **Path:** `/proxy/:tenantId/path/to/file.ext`
-* **Response Status:** `200 OK`
+* **Response Status:** `200 OK` (Requires `ADMIN` role)
 
 ---
 
-### 2. Standard Gateway API (`/api/v1/gateway/*`)
+### 2. Authentication & RBAC Endpoints (`/api/v1/auth/*`)
+
+CloudVault uses JWT Bearer Tokens (`Authorization: Bearer <token>`) or `x-api-key` headers:
+
+| Method | Endpoint Path | Payload / Headers | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/auth/token` | Body: `{ tenantId, role }` | Generates signed 24h JWT access token for tenant & role (`ADMIN`, `DEVELOPER`, `VIEWER`) |
+| `GET` | `/api/v1/auth/me` | Header: `Authorization: Bearer <token>` | Decodes token and verifies active role and permissions |
+
+#### Role Permission Matrix:
+* **`ADMIN`**: Full permissions (`read`, `write`, `delete`, `invalidate`, `admin`). Can delete files & trigger cache invalidation.
+* **`DEVELOPER`**: Read & Write permissions (`read`, `write`). Can upload & download files.
+* **`VIEWER`**: Read-only permissions (`read`). Can download files & list directory contents.
+
+---
+
+### 3. Standard Gateway API (`/api/v1/gateway/*`)
 
 Multi-tenant gateway endpoints with strict `x-tenant-id` header validation:
 

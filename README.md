@@ -22,6 +22,7 @@ In cloud architectures, querying AWS S3 directly introduces **180ms+ network lat
 4. **🧹 Redis LRU Eviction Watcher:** Automatically bounds local SSD storage usage using real-time access scoring.
 5. **🧊 Serverless Intelligent Tiering:** Automatically migrates 30+ day inactive files from S3 Standard to S3 Glacier via AWS Lambda & Amazon EventBridge.
 6. **🐂 BullMQ Background Queue:** Asynchronously queues S3 uploads with exponential backoff retries and rate-limited concurrency.
+7. **🔒 JWT Authentication & RBAC:** Enforces tenant boundary verification and Role-Based Access Control (`ADMIN`, `DEVELOPER`, `VIEWER`).
 
 > 📖 **Deep Dive Documentation:** For a comprehensive technical guide on Node.js streams vs buffers, chunked partial downloads, and BullMQ queue architecture, see [`STREAMS_AND_ASYNC_PROCESSING.md`](file:///c:/Users/jvina/Downloads/CloudVault-main/STREAMS_AND_ASYNC_PROCESSING.md).
 
