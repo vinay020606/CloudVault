@@ -11,6 +11,7 @@ import { touchFile, invalidateFileCache } from '../services/evictionService.js';
 import { uploadFileToS3, downloadFileFromS3, restoreGlacierObject } from '../services/s3Service.js';
 import { addS3UploadJob } from '../services/queueService.js';
 import { getRedisClient } from '../db/redis.js';
+import { authenticateTenant, requireRole } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -19,8 +20,8 @@ const router = express.Router();
  * Headers: x-tenant-id
  * Form-Data / Stream: filePath, file
  */
-router.post('/upload', async (req, res) => {
-  const tenantId = req.headers['x-tenant-id'];
+router.post('/upload', authenticateTenant, requireRole(['ADMIN', 'DEVELOPER']), async (req, res) => {
+  const tenantId = req.user?.tenantId || req.headers['x-tenant-id'];
   if (!tenantId) {
     return res.status(400).json({ error: 'Missing x-tenant-id header' });
   }
@@ -211,8 +212,8 @@ router.post('/upload', async (req, res) => {
  * Headers: x-tenant-id
  * Query: filePath
  */
-router.get('/download', async (req, res) => {
-  const tenantId = req.headers['x-tenant-id'];
+router.get('/download', authenticateTenant, requireRole(['ADMIN', 'DEVELOPER', 'VIEWER']), async (req, res) => {
+  const tenantId = req.user?.tenantId || req.headers['x-tenant-id'];
   const userRequestedPath = req.query.filePath;
 
   if (!tenantId) {
@@ -330,8 +331,8 @@ router.get('/download', async (req, res) => {
  * Headers: x-tenant-id
  * Returns array of tenant files
  */
-router.get('/files', async (req, res) => {
-  const tenantId = req.headers['x-tenant-id'];
+router.get('/files', authenticateTenant, requireRole(['ADMIN', 'DEVELOPER', 'VIEWER']), async (req, res) => {
+  const tenantId = req.user?.tenantId || req.headers['x-tenant-id'];
   if (!tenantId) {
     return res.status(400).json({ error: 'Missing x-tenant-id header' });
   }
@@ -350,8 +351,8 @@ router.get('/files', async (req, res) => {
  * Headers: x-tenant-id
  * Query: filePath
  */
-router.delete('/files', async (req, res) => {
-  const tenantId = req.headers['x-tenant-id'];
+router.delete('/files', authenticateTenant, requireRole('ADMIN'), async (req, res) => {
+  const tenantId = req.user?.tenantId || req.headers['x-tenant-id'];
   const filePath = req.query.filePath;
 
   if (!tenantId) {
@@ -391,8 +392,8 @@ router.delete('/files', async (req, res) => {
  * Query/Body: filePath
  * Triggered whenever a file is changed/updated in S3 to purge the local disk cache
  */
-router.post('/invalidate', async (req, res) => {
-  const tenantId = req.headers['x-tenant-id'] || req.body?.tenantId;
+router.post('/invalidate', authenticateTenant, requireRole('ADMIN'), async (req, res) => {
+  const tenantId = req.user?.tenantId || req.headers['x-tenant-id'] || req.body?.tenantId;
   const filePath = req.query.filePath || req.body?.filePath;
 
   if (!tenantId || !filePath) {

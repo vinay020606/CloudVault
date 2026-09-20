@@ -11,6 +11,8 @@ import { uploadFileToS3, downloadFileFromS3, restoreGlacierObject } from '../ser
 import { addS3UploadJob } from '../services/queueService.js';
 import { getRedisClient } from '../db/redis.js';
 import { query } from '../db/mysql.js';
+import { authenticateTenant, hasPermission } from '../middleware/authMiddleware.js';
+import { hasPermission as checkRolePermission } from '../services/authService.js';
 
 const router = express.Router();
 
@@ -18,8 +20,8 @@ const router = express.Router();
  * Transparent Storage Proxy Route
  * PUT/POST /proxy/:tenantId/* - Proxy Upload
  */
-router.all('/:tenantId/*', async (req, res) => {
-  const tenantId = req.params.tenantId;
+router.all('/:tenantId/*', authenticateTenant, async (req, res) => {
+  const tenantId = req.user?.tenantId || req.params.tenantId;
   const userRequestedPath = req.params[0];
 
   if (!tenantId) {
@@ -30,8 +32,13 @@ router.all('/:tenantId/*', async (req, res) => {
     return res.status(400).json({ error: 'Missing file path in URL' });
   }
 
+  const userRole = req.user?.role || 'VIEWER';
+
   // Handle Proxy Upload (PUT or POST)
   if (req.method === 'PUT' || req.method === 'POST') {
+    if (!checkRolePermission(userRole, 'write')) {
+      return res.status(403).json({ error: `Forbidden: Role '${userRole}' cannot perform write uploads` });
+    }
     try {
       const fileName = path.basename(userRequestedPath);
 
@@ -87,6 +94,9 @@ router.all('/:tenantId/*', async (req, res) => {
 
   // Handle Proxy Download (GET)
   if (req.method === 'GET') {
+    if (!checkRolePermission(userRole, 'read')) {
+      return res.status(403).json({ error: `Forbidden: Role '${userRole}' cannot perform downloads` });
+    }
     try {
       // 1. Path Sanitization Check
       const targetLocalPath = resolveTenantPath(tenantId, userRequestedPath);
@@ -163,6 +173,9 @@ router.all('/:tenantId/*', async (req, res) => {
 
   // Handle Proxy Delete (DELETE)
   if (req.method === 'DELETE') {
+    if (!checkRolePermission(userRole, 'delete')) {
+      return res.status(403).json({ error: `Forbidden: Role '${userRole}' cannot delete files` });
+    }
     try {
       const targetLocalPath = resolveTenantPath(tenantId, userRequestedPath);
       const metadata = await getFileMetadata(tenantId, userRequestedPath);

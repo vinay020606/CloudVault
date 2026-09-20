@@ -12,6 +12,7 @@ import { startS3UploadWorker } from './workers/s3UploadWorker.js';
 import gatewayRoutes from './routes/gateway.js';
 import proxyRoutes from './routes/proxy.js';
 import healthRoutes from './routes/health.js';
+import authRoutes from './routes/auth.js';
 import requestLogger from './middleware/requestLogger.js';
 
 import { fetchAwsSecret } from './services/secretsService.js';
@@ -27,7 +28,8 @@ app.use(requestLogger);
 // Serve static frontend files if any exist
 app.use(express.static('public'));
 
-// Gateway, Proxy, and Health Routes
+// Gateway, Proxy, Health, and Auth Routes
+app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/gateway', gatewayRoutes);
 app.use('/proxy', proxyRoutes);
 app.use('/health', healthRoutes);
