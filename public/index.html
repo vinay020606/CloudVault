@@ -42,6 +42,16 @@
             gap: 12px;
         }
 
+        .role-badge {
+            border: 1px solid #000000;
+            padding: 2px 8px;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+            background-color: #ffffff;
+            color: #000000;
+        }
+
         button, .btn {
             background-color: #000000;
             color: #ffffff;
@@ -54,6 +64,13 @@
 
         button:hover, .btn:hover {
             background-color: #333333;
+        }
+
+        button:disabled, .btn:disabled {
+            background-color: #cccccc;
+            color: #666666;
+            border-color: #999999;
+            cursor: not-allowed;
         }
 
         button.btn-outline {
@@ -121,13 +138,30 @@
             font-weight: 500;
         }
 
-        input[type="file"], input[type="text"] {
+        input[type="file"], input[type="text"], select {
             width: 100%;
             padding: 8px;
             border: 1px solid #000000;
             background-color: #ffffff;
             color: #000000;
             font-size: 14px;
+        }
+
+        .auth-bar {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-top: 8px;
+        }
+
+        .token-display {
+            font-family: monospace;
+            font-size: 11px;
+            word-break: break-all;
+            border: 1px solid #000000;
+            padding: 8px;
+            background-color: #f9f9f9;
+            margin-top: 8px;
         }
 
         .upload-actions {
@@ -175,10 +209,31 @@
         <h1>CloudVault Gateway</h1>
         <div class="tenant-info">
             <span>Tenant: <strong id="activeUser">tenant-alex</strong></span>
+            <span class="role-badge" id="activeRoleBadge">ADMIN</span>
             <button class="btn-outline" onclick="switchTenantPrompt()">Switch Tenant</button>
         </div>
     </header>
 
+    <!-- Auth & Role Control Panel -->
+    <div class="section-box">
+        <h2 style="font-size: 16px; margin-bottom: 12px;">Authentication & Role-Based Access Control (RBAC)</h2>
+        <div class="auth-bar">
+            <div style="flex: 1;">
+                <label for="roleSelector">Select Access Role</label>
+                <select id="roleSelector" onchange="handleRoleChange()">
+                    <option value="ADMIN">ADMIN (Full Access: Read, Write, Delete, Invalidate)</option>
+                    <option value="DEVELOPER" selected>DEVELOPER (Read & Write Access)</option>
+                    <option value="VIEWER">VIEWER (Read-Only Access)</option>
+                </select>
+            </div>
+            <div style="margin-top: 22px;">
+                <button class="btn-outline" onclick="refreshAuthToken()">Generate New JWT Token</button>
+            </div>
+        </div>
+        <div class="token-display" id="tokenBox">Generating JWT Token...</div>
+    </div>
+
+    <!-- Stats Overview -->
     <div class="stats-grid">
         <div class="stat-card">
             <div class="stat-label">Total Files</div>
@@ -198,7 +253,8 @@
         </div>
     </div>
 
-    <div class="section-box">
+    <!-- Upload Form -->
+    <div class="section-box" id="uploadBox">
         <h2 style="font-size: 16px; margin-bottom: 12px;">Upload File</h2>
         <form onsubmit="handleUploadSubmit(event)">
             <div class="form-group">
@@ -210,12 +266,14 @@
                 <input type="text" id="customPathInput" placeholder="e.g. docs/report.pdf">
             </div>
             <div class="upload-actions">
-                <button type="submit">Upload File</button>
+                <button type="submit" id="uploadBtn">Upload File</button>
+                <span id="roleNotice" style="font-size: 12px; color: #666; display: none;">(Upload disabled for VIEWER role)</span>
             </div>
         </form>
         <div id="uploadStatus" class="status-msg"></div>
     </div>
 
+    <!-- Files Table -->
     <div class="section-box">
         <div class="table-header-row">
             <h2 style="font-size: 16px;">Files List</h2>
@@ -240,26 +298,86 @@
 
     <script>
         const API_BASE = '/api/v1/gateway';
+        const AUTH_BASE = '/api/v1/auth';
         let currentTenantId = 'tenant-alex';
+        let currentRole = 'ADMIN';
+        let jwtToken = '';
 
-        window.addEventListener('DOMContentLoaded', () => {
+        window.addEventListener('DOMContentLoaded', async () => {
+            await refreshAuthToken();
             loadFiles();
         });
+
+        async function refreshAuthToken() {
+            try {
+                const res = await fetch(`${AUTH_BASE}/token`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tenantId: currentTenantId, role: currentRole })
+                });
+                const data = await res.json();
+                if (data.token) {
+                    jwtToken = data.token;
+                    document.getElementById('tokenBox').textContent = `Bearer ${jwtToken}`;
+                    document.getElementById('activeRoleBadge').textContent = currentRole;
+                    updateRoleUI();
+                }
+            } catch (err) {
+                console.warn('Auth token generation failed:', err);
+            }
+        }
+
+        async function handleRoleChange() {
+            currentRole = document.getElementById('roleSelector').value;
+            await refreshAuthToken();
+            loadFiles();
+        }
+
+        function updateRoleUI() {
+            const uploadBtn = document.getElementById('uploadBtn');
+            const fileInput = document.getElementById('fileSelector');
+            const notice = document.getElementById('roleNotice');
+
+            if (currentRole === 'VIEWER') {
+                uploadBtn.disabled = true;
+                fileInput.disabled = true;
+                notice.style.display = 'inline';
+            } else {
+                uploadBtn.disabled = false;
+                fileInput.disabled = false;
+                notice.style.display = 'none';
+            }
+        }
 
         function switchTenantPrompt() {
             const input = prompt('Enter Tenant ID:', currentTenantId);
             if (input && input.trim()) {
                 currentTenantId = input.trim().toLowerCase();
                 document.getElementById('activeUser').textContent = currentTenantId;
-                loadFiles();
+                refreshAuthToken().then(() => loadFiles());
             }
+        }
+
+        function getAuthHeaders() {
+            const headers = {
+                'x-tenant-id': currentTenantId,
+            };
+            if (jwtToken) {
+                headers['Authorization'] = `Bearer ${jwtToken}`;
+            }
+            return headers;
         }
 
         async function loadFiles() {
             try {
                 const res = await fetch(`${API_BASE}/files`, {
-                    headers: { 'x-tenant-id': currentTenantId }
+                    headers: getAuthHeaders()
                 });
+                if (res.status === 401 || res.status === 403) {
+                    const errData = await res.json();
+                    alert(`Access Error (${res.status}): ${errData.error || errData.message}`);
+                    return;
+                }
                 const data = await res.json();
                 const files = data.files || [];
                 renderFiles(files);
@@ -287,6 +405,8 @@
                 return;
             }
 
+            const canDelete = currentRole === 'ADMIN';
+
             files.forEach(f => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
@@ -295,7 +415,7 @@
                     <td>${escapeHtml(f.currentTier || 'HOT')}</td>
                     <td style="text-align: center;">
                         <button class="btn-outline" style="padding: 2px 8px; font-size: 12px;" onclick="downloadFile('${escapeHtml(f.filePath)}')">Download</button>
-                        <button class="btn-danger" style="padding: 2px 8px; font-size: 12px; margin-left: 4px;" onclick="deleteFile('${escapeHtml(f.filePath)}')">Delete</button>
+                        <button class="btn-danger" style="padding: 2px 8px; font-size: 12px; margin-left: 4px;" ${!canDelete ? 'disabled title="ADMIN role required for deletion"' : ''} onclick="deleteFile('${escapeHtml(f.filePath)}')">Delete</button>
                     </td>
                 `;
                 tbody.appendChild(tr);
@@ -304,6 +424,10 @@
 
         async function handleUploadSubmit(e) {
             e.preventDefault();
+            if (currentRole === 'VIEWER') {
+                return alert('Role VIEWER is read-only and cannot upload files.');
+            }
+
             const fileInput = document.getElementById('fileSelector');
             const statusDiv = document.getElementById('uploadStatus');
             const fileObj = fileInput.files[0];
@@ -320,9 +444,10 @@
             formData.append('file', fileObj);
 
             try {
+                const headers = getAuthHeaders();
                 const res = await fetch(`${API_BASE}/upload?filePath=${encodeURIComponent(targetPath)}`, {
                     method: 'POST',
-                    headers: { 'x-tenant-id': currentTenantId },
+                    headers: headers,
                     body: formData
                 });
 
@@ -334,7 +459,7 @@
                     loadFiles();
                 } else {
                     const data = await res.json();
-                    throw new Error(data.error || 'Upload failed');
+                    throw new Error(data.error || data.message || 'Upload failed');
                 }
             } catch (err) {
                 statusDiv.textContent = `Upload error: ${err.message}`;
@@ -344,9 +469,12 @@
         async function downloadFile(filePath) {
             try {
                 const res = await fetch(`${API_BASE}/download?filePath=${encodeURIComponent(filePath)}`, {
-                    headers: { 'x-tenant-id': currentTenantId }
+                    headers: getAuthHeaders()
                 });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    throw new Error(errData.error || `HTTP ${res.status}`);
+                }
                 const blob = await res.blob();
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -361,16 +489,20 @@
         }
 
         async function deleteFile(filePath) {
+            if (currentRole !== 'ADMIN') {
+                return alert('Only ADMIN role is authorized to delete files.');
+            }
             if (!confirm(`Delete ${filePath}?`)) return;
             try {
                 const res = await fetch(`${API_BASE}/files?filePath=${encodeURIComponent(filePath)}`, {
                     method: 'DELETE',
-                    headers: { 'x-tenant-id': currentTenantId }
+                    headers: getAuthHeaders()
                 });
                 if (res.ok) {
                     loadFiles();
                 } else {
-                    throw new Error('Delete failed');
+                    const errData = await res.json().catch(() => ({}));
+                    throw new Error(errData.error || errData.message || 'Delete failed');
                 }
             } catch (err) {
                 alert(`Delete error: ${err.message}`);
