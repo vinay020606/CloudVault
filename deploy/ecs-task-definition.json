@@ -1,0 +1,64 @@
+{
+  "family": "cloudvault-task",
+  "cpu": "256",
+  "memory": "512",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "executionRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/cloudvault-ecs-execution-role",
+  "taskRoleArn":      "arn:aws:iam::<ACCOUNT_ID>:role/cloudvault-ecs-task-role",
+
+  "containerDefinitions": [
+    {
+      "name": "cloudvault",
+      "image": "<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/cloudvault:latest",
+      "essential": true,
+      "portMappings": [
+        { "containerPort": 3000, "protocol": "tcp" }
+      ],
+
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group":         "/ecs/cloudvault",
+          "awslogs-region":        "<REGION>",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+
+      "healthCheck": {
+        "command":     ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"],
+        "interval":    30,
+        "timeout":     5,
+        "retries":     3,
+        "startPeriod": 60
+      },
+
+      "environment": [
+        { "name": "PORT",                    "value": "3000" },
+        { "name": "AWS_REGION",              "value": "<REGION>" },
+
+        { "name": "MYSQL_HOST",              "value": "<RDS_ENDPOINT>" },
+        { "name": "MYSQL_PORT",              "value": "3306" },
+        { "name": "MYSQL_USER",              "value": "cloudvault" },
+        { "name": "MYSQL_DATABASE",          "value": "cloudvault" },
+
+        { "name": "REDIS_HOST",              "value": "<ELASTICACHE_PRIMARY_ENDPOINT>" },
+        { "name": "REDIS_PORT",              "value": "6379" },
+
+        { "name": "TENANTS_STORAGE_DIR",     "value": "/usr/src/app/storage/tenants" },
+        { "name": "MAX_CACHE_SIZE_BYTES",    "value": "10737418240" },
+
+        { "name": "HOT_BUCKET",              "value": "<HOT_BUCKET_NAME>" },
+        { "name": "S3_BUCKET_NAME",          "value": "<HOT_BUCKET_NAME>" },
+        { "name": "COLD_BUCKET",             "value": "<COLD_BUCKET_NAME>" },
+        { "name": "TIERING_INACTIVITY_DAYS", "value": "30" },
+
+        { "name": "SECRETS_MANAGER_NAME",    "value": "cloudvault/production/secrets" },
+        { "name": "QUEUE_CONCURRENCY",       "value": "5" }
+      ]
+
+      // JWT_SECRET, MYSQL_PASSWORD, REDIS_PASSWORD are NOT set here.
+      // They are loaded at runtime from SECRETS_MANAGER_NAME by secretsService.applyAwsSecrets().
+    }
+  ]
+}

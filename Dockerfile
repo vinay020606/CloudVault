@@ -1,20 +1,24 @@
-# 1. Use official Node.js runtime (Lightweight Alpine version)
 FROM node:20-alpine
 
-# 2. Set working directory inside the container
+# Run as non-root user
+RUN addgroup -S cloudvault && adduser -S cloudvault -G cloudvault
+
 WORKDIR /usr/src/app
 
-# 3. Copy package files first
+# Install dependencies first (layer caching)
 COPY package*.json ./
+RUN npm ci --only=production
 
-# 4. Install dependencies
-RUN npm install
+# Copy app source
+COPY src ./src
+COPY public ./public
 
-# 5. Copy the rest of app code
-COPY . .
+# Create storage dirs with correct ownership
+RUN mkdir -p storage/blocks storage/tenants && \
+    chown -R cloudvault:cloudvault /usr/src/app
 
-# 6. Expose gateway port
+USER cloudvault
+
 EXPOSE 3000
 
-# 7. Start the CloudVault gateway server
-CMD ["npm", "start"]
+CMD ["node", "src/server.js"]

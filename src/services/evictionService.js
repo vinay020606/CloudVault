@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import config from '../config/index.js';
+import { resolveTenantPath, SecurityError } from '../utils/pathSanitizer.js';
+import { isPendingSync } from './syncTracker.js';
 
 /**
  * Updates the LRU timestamp for a file in Redis ZSET.
@@ -70,7 +72,15 @@ export async function checkAndEvict(redisClient, tenantsDir, maxCacheSizeBytes) 
 
   console.log(`[Eviction] Storage size (${totalSizeBytes} B) exceeds max limit (${maxCacheSizeBytes} B). Starting eviction...`);
 
+  let evictionIterations = 0;
+  const MAX_EVICTION_ITERATIONS = 500; // safety cap — prevents infinite loop if all keys are pending sync
+
   while (totalSizeBytes > maxCacheSizeBytes) {
+    if (++evictionIterations > MAX_EVICTION_ITERATIONS) {
+      console.warn(`[Eviction] Reached max iteration cap (${MAX_EVICTION_ITERATIONS}). Aborting eviction cycle.`);
+      break;
+    }
+
     // Fetch oldest file key from Redis LRU ZSET
     const oldest = await redisClient.zrange('cloudvault:lru_files', 0, 0);
     if (!oldest || oldest.length === 0) {
@@ -79,11 +89,26 @@ export async function checkAndEvict(redisClient, tenantsDir, maxCacheSizeBytes) 
     }
 
     const fileKey = oldest[0]; // e.g. tenant_101:documents/report.pdf
+
+    if (isPendingSync(fileKey)) {
+      // Skip this file — it's pending S3 upload. Defer by 1 hour.
+      await redisClient.zrem('cloudvault:lru_files', fileKey);
+      await redisClient.zadd('cloudvault:lru_files', Date.now() + 3600000, fileKey);
+      continue;
+    }
+
     const parts = fileKey.split(':');
     const tenantId = parts[0];
     const userPath = parts.slice(1).join(':');
 
-    const filePath = path.join(tenantsDir, tenantId, userPath);
+    // Use resolveTenantPath for consistent, safe path resolution
+    let filePath;
+    try {
+      filePath = resolveTenantPath(tenantId, userPath, tenantsDir);
+    } catch {
+      await redisClient.zrem('cloudvault:lru_files', fileKey);
+      continue;
+    }
 
     let fileSize = 0;
     try {
@@ -145,12 +170,15 @@ export async function invalidateFileCache(tenantId, filePath) {
   let removed = false;
 
   try {
-    const tenantsDir = config.storage.tenantsDir;
-    const localDiskPath = path.join(tenantsDir, tenantId, filePath.replace(/^(\/|\\)+/, ''));
+    const localDiskPath = resolveTenantPath(tenantId, filePath);
     await fs.promises.unlink(localDiskPath);
     removed = true;
     console.log(`[Cache Invalidation] Successfully purged local disk cache for updated S3 object: ${fileKey}`);
   } catch (err) {
+    if (err instanceof SecurityError) {
+      console.warn(`[Cache Invalidation] Path traversal blocked for ${tenantId}:${filePath}`);
+      return false;
+    }
     if (err.code !== 'ENOENT') {
       console.warn(`[Cache Invalidation Warn] Error unlinking ${filePath}:`, err.message);
     }

@@ -1,0 +1,673 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  CloudVault — Full Production Infrastructure
+  ECS Fargate + ALB + RDS MySQL + ElastiCache Redis + S3 + ECR + Secrets Manager
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PARAMETERS — fill these in before deploying
+# ─────────────────────────────────────────────────────────────────────────────
+Parameters:
+
+  AppName:
+    Type: String
+    Default: cloudvault
+    Description: Used as a prefix for all resource names.
+
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging, demo]
+
+  # ── Networking ──────────────────────────────────────────────────────────────
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+
+  PublicSubnet1Cidr:
+    Type: String
+    Default: 10.0.1.0/24
+
+  PublicSubnet2Cidr:
+    Type: String
+    Default: 10.0.2.0/24
+
+  PrivateSubnet1Cidr:
+    Type: String
+    Default: 10.0.10.0/24
+
+  PrivateSubnet2Cidr:
+    Type: String
+    Default: 10.0.11.0/24
+
+  # ── App ─────────────────────────────────────────────────────────────────────
+  AppPort:
+    Type: Number
+    Default: 3000
+
+  # Replace with your ECR image URI after pushing: <account>.dkr.ecr.<region>.amazonaws.com/cloudvault:latest
+  AppImageUri:
+    Type: String
+    Default: ""
+    Description: "ECR image URI. Fill in after: aws ecr create-repository --repository-name cloudvault"
+
+  AppTaskCpu:
+    Type: Number
+    Default: 256
+    AllowedValues: [256, 512, 1024, 2048, 4096]
+
+  AppTaskMemory:
+    Type: Number
+    Default: 512
+    AllowedValues: [512, 1024, 2048, 4096, 8192]
+
+  AppDesiredCount:
+    Type: Number
+    Default: 1
+
+  # ── RDS MySQL ────────────────────────────────────────────────────────────────
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.micro
+
+  DBName:
+    Type: String
+    Default: cloudvault
+
+  DBUsername:
+    Type: String
+    Default: cloudvault
+    NoEcho: true
+
+  # ── ElastiCache Redis ────────────────────────────────────────────────────────
+  RedisNodeType:
+    Type: String
+    Default: cache.t3.micro
+
+  # ── S3 ───────────────────────────────────────────────────────────────────────
+  HotBucketName:
+    Type: String
+    Default: ""
+    Description: "Globally unique S3 bucket name for hot (Standard) storage. e.g. mycompany-cloudvault-hot"
+
+  ColdBucketName:
+    Type: String
+    Default: ""
+    Description: "Globally unique S3 bucket name for cold (Glacier) storage. e.g. mycompany-cloudvault-cold"
+
+  TieringInactivityDays:
+    Type: Number
+    Default: 30
+
+  # ── HTTPS ────────────────────────────────────────────────────────────────────
+  # Leave blank to use HTTP only (fine for demo). Set to ACM certificate ARN for HTTPS.
+  CertificateArn:
+    Type: String
+    Default: ""
+    Description: "ACM Certificate ARN for HTTPS on the ALB. Leave blank for HTTP-only demo."
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONDITIONS
+# ─────────────────────────────────────────────────────────────────────────────
+Conditions:
+  HasCertificate: !Not [!Equals [!Ref CertificateArn, ""]]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RESOURCES
+# ─────────────────────────────────────────────────────────────────────────────
+Resources:
+
+  # ── VPC & Networking ─────────────────────────────────────────────────────────
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-vpc
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet1Cidr
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-public-1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet2Cidr
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-public-2
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet1Cidr
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-private-1
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet2Cidr
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-private-2
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  # ── Security Groups ──────────────────────────────────────────────────────────
+
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP/HTTPS from internet
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow traffic from ALB to ECS tasks
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref AppPort
+          ToPort: !Ref AppPort
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow MySQL from ECS tasks
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref AppSecurityGroup
+
+  RedisSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow Redis from ECS tasks
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref AppSecurityGroup
+
+  # ── S3 Buckets ───────────────────────────────────────────────────────────────
+
+  HotBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref HotBucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+
+  ColdBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref ColdBucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # ── ECR Repository ────────────────────────────────────────────────────────────
+
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub ${AppName}
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 5 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 5
+                },
+                "action": { "type": "expire" }
+              }
+            ]
+          }
+
+  # ── Secrets Manager ───────────────────────────────────────────────────────────
+
+  AppSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${AppName}/${Environment}/secrets
+      Description: CloudVault runtime secrets
+      SecretString: !Sub |
+        {
+          "JWT_SECRET": "",
+          "TOKEN_API_KEY": "",
+          "MYSQL_PASSWORD": "",
+          "REDIS_PASSWORD": "",
+          "AWS_ACCESS_KEY_ID": "",
+          "AWS_SECRET_ACCESS_KEY": ""
+        }
+      # Note: fill in the values in AWS Console or via CLI after stack creation:
+      # aws secretsmanager put-secret-value --secret-id <arn> --secret-string '{"JWT_SECRET":"...","MYSQL_PASSWORD":"..."}'
+
+  # ── RDS MySQL ─────────────────────────────────────────────────────────────────
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: CloudVault RDS subnet group
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub ${AppName}-db
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: mysql
+      EngineVersion: "8.0"
+      DBName: !Ref DBName
+      MasterUsername: !Ref DBUsername
+      ManageMasterUserPassword: true             # RDS manages the password in Secrets Manager automatically
+      AllocatedStorage: "20"
+      StorageType: gp3
+      MultiAZ: false                             # set true for production HA
+      PubliclyAccessible: false
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref DBSecurityGroup
+      BackupRetentionPeriod: 7
+      DeletionProtection: false                  # set true for production
+
+  # ── ElastiCache Redis ─────────────────────────────────────────────────────────
+
+  RedisSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: CloudVault Redis subnet group
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  RedisCluster:
+    Type: AWS::ElastiCache::ReplicationGroup
+    Properties:
+      ReplicationGroupDescription: CloudVault Redis
+      ReplicationGroupId: !Sub ${AppName}-redis
+      CacheNodeType: !Ref RedisNodeType
+      Engine: redis
+      EngineVersion: "7.0"
+      NumCacheClusters: 1                        # increase to 2 for read replica
+      AutomaticFailoverEnabled: false            # set true when NumCacheClusters >= 2
+      CacheSubnetGroupName: !Ref RedisSubnetGroup
+      SecurityGroupIds:
+        - !Ref RedisSecurityGroup
+      AtRestEncryptionEnabled: true
+      TransitEncryptionEnabled: true
+
+  # ── IAM ───────────────────────────────────────────────────────────────────────
+
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AppName}-ecs-execution-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: SecretsReadForTaskStartup
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref AppSecret
+
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AppName}-ecs-task-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                  - s3:HeadObject
+                  - s3:CopyObject
+                  - s3:RestoreObject
+                Resource:
+                  - !Sub arn:aws:s3:::${HotBucketName}/*
+                  - !Sub arn:aws:s3:::${ColdBucketName}/*
+        - PolicyName: SecretsAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref AppSecret
+
+  # ── ECS ───────────────────────────────────────────────────────────────────────
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub ${AppName}-cluster
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+
+  CloudWatchLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/${AppName}
+      RetentionInDays: 30
+
+  ECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${AppName}-task
+      Cpu: !Ref AppTaskCpu
+      Memory: !Ref AppTaskMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: !Ref AppName
+          Image: !Ref AppImageUri
+          Essential: true
+          PortMappings:
+            - ContainerPort: !Ref AppPort
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref CloudWatchLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+          HealthCheck:
+            Command: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+          Environment:
+            - Name: PORT
+              Value: !Sub "${AppPort}"
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: MYSQL_HOST
+              Value: !GetAtt DBInstance.Endpoint.Address
+            - Name: MYSQL_PORT
+              Value: "3306"
+            - Name: MYSQL_USER
+              Value: !Ref DBUsername
+            - Name: MYSQL_DATABASE
+              Value: !Ref DBName
+            - Name: REDIS_HOST
+              Value: !GetAtt RedisCluster.PrimaryEndPoint.Address
+            - Name: REDIS_PORT
+              Value: "6379"
+            - Name: TENANTS_STORAGE_DIR
+              Value: /usr/src/app/storage/tenants
+            - Name: MAX_CACHE_SIZE_BYTES
+              Value: "10737418240"
+            - Name: HOT_BUCKET
+              Value: !Ref HotBucketName
+            - Name: S3_BUCKET_NAME
+              Value: !Ref HotBucketName
+            - Name: COLD_BUCKET
+              Value: !Ref ColdBucketName
+            - Name: TIERING_INACTIVITY_DAYS
+              Value: !Sub "${TieringInactivityDays}"
+            - Name: SECRETS_MANAGER_NAME
+              Value: !Sub ${AppName}/${Environment}/secrets
+          # Secrets are loaded at runtime by the app via SECRETS_MANAGER_NAME.
+          # JWT_SECRET, MYSQL_PASSWORD, REDIS_PASSWORD come from Secrets Manager — not injected here.
+
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn: ALBListenerHTTP
+    Properties:
+      ServiceName: !Sub ${AppName}-service
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref ECSTaskDefinition
+      DesiredCount: !Ref AppDesiredCount
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets:
+            - !Ref PrivateSubnet1
+            - !Ref PrivateSubnet2
+          SecurityGroups:
+            - !Ref AppSecurityGroup
+      LoadBalancers:
+        - ContainerName: !Ref AppName
+          ContainerPort: !Ref AppPort
+          TargetGroupArn: !Ref ALBTargetGroup
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+      HealthCheckGracePeriodSeconds: 60
+
+  # ── Auto Scaling ──────────────────────────────────────────────────────────────
+
+  AutoScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 5
+      MinCapacity: 1
+      ResourceId: !Sub service/${ECSCluster}/${AppName}-service
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+      RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService
+
+  AutoScalingPolicyCPU:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub ${AppName}-cpu-scaling
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref AutoScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70.0
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
+
+  # ── Application Load Balancer ─────────────────────────────────────────────────
+
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${AppName}-alb
+      Scheme: internet-facing
+      Type: application
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${AppName}-tg
+      Port: !Ref AppPort
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  ALBListenerHTTP:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        # If you have a cert, redirect HTTP → HTTPS. Otherwise forward directly.
+        - !If
+          - HasCertificate
+          - Type: redirect
+            RedirectConfig:
+              Protocol: HTTPS
+              Port: "443"
+              StatusCode: HTTP_301
+          - Type: forward
+            TargetGroupArn: !Ref ALBTargetGroup
+
+  ALBListenerHTTPS:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HasCertificate
+    Properties:
+      LoadBalancerArn: !Ref ALB
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OUTPUTS
+# ─────────────────────────────────────────────────────────────────────────────
+Outputs:
+
+  AppURL:
+    Description: CloudVault public URL
+    Value: !Sub http://${ALB.DNSName}
+
+  ECRRepositoryURI:
+    Description: ECR repository URI — use this in AppImageUri parameter
+    Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ECRRepository}
+
+  SecretsManagerARN:
+    Description: ARN of the Secrets Manager secret — fill in values after stack creation
+    Value: !Ref AppSecret
+
+  DBEndpoint:
+    Description: RDS MySQL endpoint
+    Value: !GetAtt DBInstance.Endpoint.Address
+
+  RedisEndpoint:
+    Description: ElastiCache Redis primary endpoint
+    Value: !GetAtt RedisCluster.PrimaryEndPoint.Address
+
+  ECSClusterName:
+    Description: ECS Cluster name
+    Value: !Ref ECSCluster
+
+  ECSServiceName:
+    Description: ECS Service name
+    Value: !Sub ${AppName}-service

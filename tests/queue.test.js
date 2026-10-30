@@ -32,6 +32,8 @@ async function runQueueTest() {
   }
 
   console.log('✅ PASS: BullMQ queue service & fallback handling verified.');
+  // Force exit — BullMQ ioredis retries keep process alive when Redis is unavailable
+  process.exit(0);
 }
 
 runQueueTest().catch((err) => {

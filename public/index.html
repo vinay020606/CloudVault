@@ -5,521 +5,729 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CloudVault Gateway</title>
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg:        #0e0e0e;
+            --surface:   #161616;
+            --surface2:  #1f1f1f;
+            --border:    #2a2a2a;
+            --border-hi: #3d3d3d;
+            --text:      #e2e2e2;
+            --muted:     #777;
+            --dim:       #555;
+            --accent:    #ffffff;
+            --danger:    #ff4444;
+            --hot-bg:    #ffffff;
+            --hot-fg:    #000000;
+            --cold-bg:   #2a2a2a;
+            --cold-fg:   #aaa;
         }
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #ffffff;
-            color: #000000;
-            line-height: 1.5;
-            padding: 24px;
-            max-width: 1000px;
+        html, body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .layout {
+            max-width: 1100px;
             margin: 0 auto;
+            padding: 28px 24px;
         }
 
-        h1, h2, h3 {
-            font-weight: 600;
-            color: #000000;
-        }
-
+        /* ── Header ── */
         header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding-bottom: 16px;
-            border-bottom: 2px solid #000000;
-            margin-bottom: 24px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border-hi);
+            margin-bottom: 28px;
         }
 
-        .tenant-info {
-            font-size: 14px;
+        .header-brand {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 14px;
         }
 
-        .role-badge {
-            border: 1px solid #000000;
-            padding: 2px 8px;
-            font-size: 12px;
-            font-weight: bold;
+        .header-brand h1 {
+            font-size: 16px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
             text-transform: uppercase;
-            background-color: #ffffff;
-            color: #000000;
+            color: var(--accent);
         }
 
-        button, .btn {
-            background-color: #000000;
-            color: #ffffff;
-            border: 1px solid #000000;
-            padding: 6px 14px;
-            font-size: 14px;
+        .dot-sep { color: var(--dim); font-size: 18px; line-height: 1; }
+
+        .server-pill {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            padding: 3px 10px;
+            border-radius: 20px;
+            border: 1px solid;
+        }
+        .server-pill.online  { color: #4ade80; border-color: #1a4731; background: #0d2318; }
+        .server-pill.offline { color: var(--muted); border-color: var(--border); background: transparent; }
+        .server-pill.checking { color: var(--dim); border-color: var(--border); background: transparent; }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .tenant-label { color: var(--muted); }
+        .tenant-name  { color: var(--accent); font-weight: 600; }
+
+        .role-chip {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            padding: 3px 10px;
+            border-radius: 3px;
+            background: var(--accent);
+            color: var(--bg);
+        }
+
+        /* ── Buttons ── */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 14px;
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
             cursor: pointer;
-            border-radius: 2px;
+            border-radius: 4px;
+            border: 1px solid;
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
+            white-space: nowrap;
         }
 
-        button:hover, .btn:hover {
-            background-color: #333333;
+        .btn-primary {
+            background: var(--accent);
+            color: var(--bg);
+            border-color: var(--accent);
         }
+        .btn-primary:hover { background: #d4d4d4; border-color: #d4d4d4; }
 
-        button:disabled, .btn:disabled {
-            background-color: #cccccc;
-            color: #666666;
-            border-color: #999999;
+        .btn-ghost {
+            background: transparent;
+            color: var(--text);
+            border-color: var(--border-hi);
+        }
+        .btn-ghost:hover { background: var(--surface2); border-color: #555; }
+
+        .btn-danger {
+            background: transparent;
+            color: #f87171;
+            border-color: #3d1515;
+        }
+        .btn-danger:hover { background: #3d1515; border-color: #f87171; }
+
+        .btn-warn {
+            background: transparent;
+            color: #fbbf24;
+            border-color: #3d2e0a;
+        }
+        .btn-warn:hover { background: #3d2e0a; border-color: #fbbf24; }
+
+        .btn-sm { padding: 4px 10px; font-size: 11px; }
+
+        .btn:disabled {
+            opacity: 0.3;
             cursor: not-allowed;
+            pointer-events: none;
         }
 
-        button.btn-outline {
-            background-color: #ffffff;
-            color: #000000;
-            border: 1px solid #000000;
-        }
-
-        button.btn-outline:hover {
-            background-color: #f0f0f0;
-        }
-
-        button.btn-danger {
-            background-color: #ffffff;
-            color: #000000;
-            border: 1px solid #000000;
-        }
-
-        button.btn-danger:hover {
-            background-color: #000000;
-            color: #ffffff;
-        }
-
+        /* ── Stats Row ── */
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 12px;
-            margin-bottom: 24px;
+            gap: 10px;
+            margin-bottom: 20px;
         }
 
         .stat-card {
-            border: 1px solid #000000;
-            padding: 12px;
-            background-color: #ffffff;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 14px 16px;
         }
 
         .stat-label {
-            font-size: 12px;
+            font-size: 10px;
             text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: #444444;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+            margin-bottom: 6px;
         }
 
         .stat-value {
-            font-size: 22px;
-            font-weight: bold;
-            margin-top: 4px;
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: -0.02em;
         }
 
-        .section-box {
-            border: 1px solid #000000;
-            padding: 20px;
-            margin-bottom: 24px;
-            background-color: #ffffff;
+        /* ── Panels ── */
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 20px 24px;
+            margin-bottom: 16px;
         }
 
-        .form-group {
-            margin-bottom: 12px;
+        .panel-title {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--muted);
+            margin-bottom: 16px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border);
         }
+
+        /* ── Auth Panel ── */
+        .auth-row {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+        .auth-row > .field-group { flex: 1; }
+
+        .field-group { margin-bottom: 12px; }
 
         label {
             display: block;
-            font-size: 14px;
-            margin-bottom: 4px;
-            font-weight: 500;
-        }
-
-        input[type="file"], input[type="text"], select {
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #000000;
-            background-color: #ffffff;
-            color: #000000;
-            font-size: 14px;
-        }
-
-        .auth-bar {
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            margin-top: 8px;
-        }
-
-        .token-display {
-            font-family: monospace;
             font-size: 11px;
-            word-break: break-all;
-            border: 1px solid #000000;
-            padding: 8px;
-            background-color: #f9f9f9;
-            margin-top: 8px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--muted);
+            margin-bottom: 6px;
         }
 
-        .upload-actions {
+        select, input[type="text"], input[type="file"] {
+            width: 100%;
+            background: var(--surface2);
+            color: var(--text);
+            border: 1px solid var(--border-hi);
+            border-radius: 4px;
+            padding: 8px 10px;
+            font-family: inherit;
+            font-size: 13px;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+        select:focus, input:focus { border-color: #555; }
+        select option { background: var(--surface2); }
+
+        input[type="file"] {
+            padding: 7px 10px;
+            color: var(--muted);
+            cursor: pointer;
+        }
+        input[type="file"]::-webkit-file-upload-button {
+            background: var(--surface2);
+            color: var(--text);
+            border: 1px solid var(--border-hi);
+            border-radius: 3px;
+            padding: 4px 10px;
+            font-family: inherit;
+            font-size: 12px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+
+        .token-box {
+            font-family: inherit;
+            font-size: 10px;
+            color: var(--dim);
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 10px 12px;
+            margin-top: 12px;
+            word-break: break-all;
+            max-height: 52px;
+            overflow: hidden;
+            line-height: 1.5;
+        }
+        .token-box.has-token { color: #4ade80; }
+
+        /* ── Upload Panel ── */
+        .upload-row {
             display: flex;
             gap: 12px;
-            margin-top: 12px;
             align-items: center;
+            margin-top: 12px;
         }
 
-        .status-msg {
+        .status-bar {
+            font-size: 12px;
+            font-weight: 600;
+            padding: 8px 12px;
+            border-radius: 4px;
             margin-top: 12px;
-            font-size: 14px;
-            font-weight: bold;
+            display: none;
         }
+        .status-bar.show { display: block; }
+        .status-bar.ok  { background: #0d2318; color: #4ade80; border: 1px solid #1a4731; }
+        .status-bar.err { background: #2a0d0d; color: #f87171; border: 1px solid #4a1515; }
+        .status-bar.info { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+
+        /* ── Files Table ── */
+        .table-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .table-wrap { overflow-x: auto; }
 
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 12px;
         }
 
-        th, td {
-            border: 1px solid #000000;
-            padding: 10px;
+        thead th {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border-hi);
             text-align: left;
-            font-size: 14px;
+            white-space: nowrap;
         }
 
-        th {
-            background-color: #f0f0f0;
-            font-weight: 600;
+        tbody td {
+            padding: 11px 14px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
         }
 
-        .table-header-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 8px;
+        tbody tr:last-child td { border-bottom: none; }
+        tbody tr:hover td { background: var(--surface2); }
+
+        .file-path { color: var(--text); font-weight: 600; }
+        .file-name { color: var(--dim); font-size: 11px; margin-top: 2px; }
+
+        .tier-badge {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.07em;
+            text-transform: uppercase;
+            padding: 3px 8px;
+            border-radius: 3px;
         }
+        .tier-hot  { background: var(--hot-bg); color: var(--hot-fg); }
+        .tier-cold { background: var(--cold-bg); color: var(--cold-fg); border: 1px solid #3d3d3d; }
+
+        .actions-cell { display: flex; gap: 6px; flex-wrap: wrap; }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--dim);
+        }
+        .empty-state .empty-icon { font-size: 32px; margin-bottom: 10px; }
+
+        .muted { color: var(--muted); }
     </style>
 </head>
 <body>
+<div class="layout">
 
+    <!-- Header -->
     <header>
-        <h1>CloudVault Gateway</h1>
-        <div class="tenant-info">
-            <span>Tenant: <strong id="activeUser">tenant-alex</strong></span>
-            <span class="role-badge" id="activeRoleBadge">ADMIN</span>
-            <button class="btn-outline" onclick="switchTenantPrompt()">Switch Tenant</button>
+        <div class="header-brand">
+            <h1>CloudVault</h1>
+            <span class="dot-sep">·</span>
+            <span class="server-pill checking" id="serverStatus">Checking</span>
+        </div>
+        <div class="header-right">
+            <span><span class="tenant-label">tenant / </span><span class="tenant-name" id="activeUser">tenant-alex</span></span>
+            <span class="role-chip" id="activeRoleBadge">ADMIN</span>
+            <button class="btn btn-ghost btn-sm" onclick="switchTenantPrompt()">Switch</button>
         </div>
     </header>
 
-    <!-- Auth & Role Control Panel -->
-    <div class="section-box">
-        <h2 style="font-size: 16px; margin-bottom: 12px;">Authentication & Role-Based Access Control (RBAC)</h2>
-        <div class="auth-bar">
-            <div style="flex: 1;">
-                <label for="roleSelector">Select Access Role</label>
-                <select id="roleSelector" onchange="handleRoleChange()">
-                    <option value="ADMIN">ADMIN (Full Access: Read, Write, Delete, Invalidate)</option>
-                    <option value="DEVELOPER" selected>DEVELOPER (Read & Write Access)</option>
-                    <option value="VIEWER">VIEWER (Read-Only Access)</option>
-                </select>
-            </div>
-            <div style="margin-top: 22px;">
-                <button class="btn-outline" onclick="refreshAuthToken()">Generate New JWT Token</button>
-            </div>
-        </div>
-        <div class="token-display" id="tokenBox">Generating JWT Token...</div>
-    </div>
-
-    <!-- Stats Overview -->
+    <!-- Stats -->
     <div class="stats-grid">
         <div class="stat-card">
             <div class="stat-label">Total Files</div>
-            <div class="stat-value" id="statFiles">0</div>
+            <div class="stat-value" id="statFiles">—</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">Storage Used</div>
-            <div class="stat-value" id="statBytes">0 B</div>
+            <div class="stat-value" id="statBytes">—</div>
         </div>
         <div class="stat-card">
-            <div class="stat-label">Hot Cache</div>
-            <div class="stat-value" id="statHot">0</div>
+            <div class="stat-label">Hot (S3 Standard)</div>
+            <div class="stat-value" id="statHot">—</div>
         </div>
         <div class="stat-card">
-            <div class="stat-label">Glacier Cold</div>
-            <div class="stat-value" id="statCold">0</div>
+            <div class="stat-label">Cold (Glacier)</div>
+            <div class="stat-value" id="statCold">—</div>
         </div>
     </div>
 
-    <!-- Upload Form -->
-    <div class="section-box" id="uploadBox">
-        <h2 style="font-size: 16px; margin-bottom: 12px;">Upload File</h2>
+    <!-- Auth Panel -->
+    <div class="panel">
+        <div class="panel-title">Authentication & RBAC</div>
+        <div class="auth-row">
+            <div class="field-group">
+                <label for="roleSelector">Role</label>
+                <select id="roleSelector" onchange="handleRoleChange()">
+                    <option value="ADMIN">ADMIN — read, write, delete, invalidate</option>
+                    <option value="DEVELOPER">DEVELOPER — read & write</option>
+                    <option value="VIEWER">VIEWER — read only</option>
+                </select>
+            </div>
+            <div style="padding-bottom: 1px;">
+                <button class="btn btn-ghost" onclick="refreshAuthToken()">Regenerate JWT</button>
+            </div>
+        </div>
+        <div class="token-box" id="tokenBox">Generating token...</div>
+    </div>
+
+    <!-- Upload Panel -->
+    <div class="panel" id="uploadPanel">
+        <div class="panel-title">Upload File</div>
         <form onsubmit="handleUploadSubmit(event)">
-            <div class="form-group">
-                <label for="fileSelector">Select File</label>
-                <input type="file" id="fileSelector" required>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                <div class="field-group" style="margin:0">
+                    <label for="fileSelector">File</label>
+                    <input type="file" id="fileSelector" required>
+                </div>
+                <div class="field-group" style="margin:0">
+                    <label for="customPathInput">Destination Path <span class="muted" style="text-transform:none;font-weight:400;">(optional)</span></label>
+                    <input type="text" id="customPathInput" placeholder="docs/report.pdf">
+                </div>
             </div>
-            <div class="form-group">
-                <label for="customPathInput">Destination Path (Optional)</label>
-                <input type="text" id="customPathInput" placeholder="e.g. docs/report.pdf">
-            </div>
-            <div class="upload-actions">
-                <button type="submit" id="uploadBtn">Upload File</button>
-                <span id="roleNotice" style="font-size: 12px; color: #666; display: none;">(Upload disabled for VIEWER role)</span>
+            <div class="upload-row">
+                <button type="submit" class="btn btn-primary" id="uploadBtn">Upload</button>
+                <span id="roleNotice" class="muted" style="display:none; font-size:12px;">Upload requires DEVELOPER or ADMIN role.</span>
             </div>
         </form>
-        <div id="uploadStatus" class="status-msg"></div>
+        <div class="status-bar" id="uploadStatus"></div>
     </div>
 
-    <!-- Files Table -->
-    <div class="section-box">
-        <div class="table-header-row">
-            <h2 style="font-size: 16px;">Files List</h2>
-            <button class="btn-outline" onclick="loadFiles()">Refresh</button>
+    <!-- Files Panel -->
+    <div class="panel">
+        <div class="table-header">
+            <div class="panel-title" style="margin:0; border:none; padding:0;">Files</div>
+            <button class="btn btn-ghost btn-sm" onclick="loadFiles()">Refresh</button>
         </div>
-        <table>
-            <thead>
-                <tr>
-                    <th>File Path</th>
-                    <th>Size</th>
-                    <th>Storage Tier</th>
-                    <th style="width: 160px; text-align: center;">Actions</th>
-                </tr>
-            </thead>
-            <tbody id="filesTableBody">
-                <tr>
-                    <td colspan="4" style="text-align: center; color: #666;">No files stored for this tenant.</td>
-                </tr>
-            </tbody>
-        </table>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>File</th>
+                        <th>Size</th>
+                        <th>Tier</th>
+                        <th>Last Accessed</th>
+                        <th style="min-width:220px;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="filesTableBody">
+                    <tr>
+                        <td colspan="5">
+                            <div class="empty-state">
+                                <div class="empty-icon">◻</div>
+                                No files stored for this tenant.
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 
-    <script>
-        const API_BASE = '/api/v1/gateway';
-        const AUTH_BASE = '/api/v1/auth';
-        let currentTenantId = 'tenant-alex';
-        let currentRole = 'ADMIN';
-        let jwtToken = '';
+</div><!-- /layout -->
 
-        window.addEventListener('DOMContentLoaded', async () => {
-            await refreshAuthToken();
-            loadFiles();
-        });
+<script>
+    const API_BASE  = '/api/v1/gateway';
+    const AUTH_BASE = '/api/v1/auth';
+    let currentTenantId = 'tenant-alex';
+    let currentRole     = 'ADMIN';
+    let jwtToken        = '';
 
-        async function refreshAuthToken() {
-            try {
-                const res = await fetch(`${AUTH_BASE}/token`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ tenantId: currentTenantId, role: currentRole })
-                });
-                const data = await res.json();
-                if (data.token) {
-                    jwtToken = data.token;
-                    document.getElementById('tokenBox').textContent = `Bearer ${jwtToken}`;
-                    document.getElementById('activeRoleBadge').textContent = currentRole;
-                    updateRoleUI();
-                }
-            } catch (err) {
-                console.warn('Auth token generation failed:', err);
-            }
-        }
+    window.addEventListener('DOMContentLoaded', async () => {
+        checkServerHealth();
+        setInterval(checkServerHealth, 30000);
+        await refreshAuthToken();
+        loadFiles();
+    });
 
-        async function handleRoleChange() {
-            currentRole = document.getElementById('roleSelector').value;
-            await refreshAuthToken();
-            loadFiles();
-        }
-
-        function updateRoleUI() {
-            const uploadBtn = document.getElementById('uploadBtn');
-            const fileInput = document.getElementById('fileSelector');
-            const notice = document.getElementById('roleNotice');
-
-            if (currentRole === 'VIEWER') {
-                uploadBtn.disabled = true;
-                fileInput.disabled = true;
-                notice.style.display = 'inline';
+    async function checkServerHealth() {
+        const el = document.getElementById('serverStatus');
+        try {
+            const res = await fetch('/health');
+            if (res.ok) {
+                el.textContent = 'Online';
+                el.className = 'server-pill online';
             } else {
-                uploadBtn.disabled = false;
-                fileInput.disabled = false;
-                notice.style.display = 'none';
+                el.textContent = 'Degraded';
+                el.className = 'server-pill offline';
             }
+        } catch {
+            el.textContent = 'Offline';
+            el.className = 'server-pill offline';
         }
+    }
 
-        function switchTenantPrompt() {
-            const input = prompt('Enter Tenant ID:', currentTenantId);
-            if (input && input.trim()) {
-                currentTenantId = input.trim().toLowerCase();
-                document.getElementById('activeUser').textContent = currentTenantId;
-                refreshAuthToken().then(() => loadFiles());
+    async function refreshAuthToken() {
+        const box = document.getElementById('tokenBox');
+        box.textContent = 'Generating...';
+        box.className = 'token-box';
+        try {
+            const res = await fetch(`${AUTH_BASE}/token`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tenantId: currentTenantId, role: currentRole }),
+            });
+            const data = await res.json();
+            if (data.token) {
+                jwtToken = data.token;
+                box.textContent = `Bearer ${jwtToken}`;
+                box.className = 'token-box has-token';
+                document.getElementById('activeRoleBadge').textContent = currentRole;
+                updateRoleUI();
+            } else {
+                box.textContent = data.error || 'Token generation failed.';
             }
+        } catch (err) {
+            box.textContent = 'Request failed: ' + err.message;
         }
+    }
 
-        function getAuthHeaders() {
-            const headers = {
-                'x-tenant-id': currentTenantId,
-            };
-            if (jwtToken) {
-                headers['Authorization'] = `Bearer ${jwtToken}`;
-            }
-            return headers;
+    async function handleRoleChange() {
+        currentRole = document.getElementById('roleSelector').value;
+        await refreshAuthToken();
+        loadFiles();
+    }
+
+    function updateRoleUI() {
+        const isReadOnly = currentRole === 'VIEWER';
+        document.getElementById('uploadBtn').disabled = isReadOnly;
+        document.getElementById('fileSelector').disabled = isReadOnly;
+        document.getElementById('roleNotice').style.display = isReadOnly ? 'inline' : 'none';
+    }
+
+    function switchTenantPrompt() {
+        const input = prompt('Tenant ID:', currentTenantId);
+        if (input && input.trim()) {
+            currentTenantId = input.trim().toLowerCase();
+            document.getElementById('activeUser').textContent = currentTenantId;
+            refreshAuthToken().then(() => loadFiles());
         }
+    }
 
-        async function loadFiles() {
-            try {
-                const res = await fetch(`${API_BASE}/files`, {
-                    headers: getAuthHeaders()
-                });
-                if (res.status === 401 || res.status === 403) {
-                    const errData = await res.json();
-                    alert(`Access Error (${res.status}): ${errData.error || errData.message}`);
-                    return;
-                }
-                const data = await res.json();
-                const files = data.files || [];
-                renderFiles(files);
-            } catch (err) {
-                console.warn('Failed listing files:', err);
-            }
-        }
+    function getAuthHeaders() {
+        const h = { 'x-tenant-id': currentTenantId };
+        if (jwtToken) h['Authorization'] = `Bearer ${jwtToken}`;
+        return h;
+    }
 
-        function renderFiles(files) {
-            const tbody = document.getElementById('filesTableBody');
-            tbody.innerHTML = '';
-
-            const totalBytes = files.reduce((acc, f) => acc + (f.sizeBytes || 0), 0);
-            document.getElementById('statFiles').textContent = files.length;
-            document.getElementById('statBytes').textContent = formatBytes(totalBytes);
-            document.getElementById('statHot').textContent = files.filter(f => f.currentTier === 'HOT').length;
-            document.getElementById('statCold').textContent = files.filter(f => f.currentTier === 'COLD').length;
-
-            if (files.length === 0) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="4" style="text-align: center; color: #666;">No files stored for this tenant.</td>
-                    </tr>
-                `;
+    async function loadFiles() {
+        try {
+            const res = await fetch(`${API_BASE}/files`, { headers: getAuthHeaders() });
+            if (res.status === 401 || res.status === 403) {
+                const d = await res.json().catch(() => ({}));
+                showTableMsg(d.error || d.message || `Access denied (${res.status})`);
                 return;
             }
+            const data = await res.json();
+            renderFiles(data.files || []);
+        } catch (err) {
+            showTableMsg('Failed to load files: ' + err.message);
+        }
+    }
 
-            const canDelete = currentRole === 'ADMIN';
+    function showTableMsg(msg) {
+        document.getElementById('filesTableBody').innerHTML = `
+            <tr><td colspan="5">
+                <div class="empty-state"><div class="empty-icon">⚠</div>${escapeHtml(msg)}</div>
+            </td></tr>`;
+    }
 
-            files.forEach(f => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td><strong>${escapeHtml(f.filePath)}</strong></td>
-                    <td>${formatBytes(f.sizeBytes)}</td>
-                    <td>${escapeHtml(f.currentTier || 'HOT')}</td>
-                    <td style="text-align: center;">
-                        <button class="btn-outline" style="padding: 2px 8px; font-size: 12px;" onclick="downloadFile('${escapeHtml(f.filePath)}')">Download</button>
-                        <button class="btn-danger" style="padding: 2px 8px; font-size: 12px; margin-left: 4px;" ${!canDelete ? 'disabled title="ADMIN role required for deletion"' : ''} onclick="deleteFile('${escapeHtml(f.filePath)}')">Delete</button>
-                    </td>
-                `;
-                tbody.appendChild(tr);
+    function renderFiles(files) {
+        const tbody = document.getElementById('filesTableBody');
+        tbody.innerHTML = '';
+
+        const totalBytes = files.reduce((a, f) => a + (f.sizeBytes || 0), 0);
+        document.getElementById('statFiles').textContent = files.length;
+        document.getElementById('statBytes').textContent = formatBytes(totalBytes);
+        document.getElementById('statHot').textContent  = files.filter(f => (f.currentTier || 'HOT') === 'HOT').length;
+        document.getElementById('statCold').textContent = files.filter(f => f.currentTier === 'COLD').length;
+
+        if (!files.length) {
+            tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">◻</div>No files stored for this tenant.</div></td></tr>`;
+            return;
+        }
+
+        const canAdmin = currentRole === 'ADMIN';
+
+        files.forEach(f => {
+            const tier = f.currentTier || 'HOT';
+            const accessed = f.lastAccessedAt
+                ? new Date(f.lastAccessedAt).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })
+                : '—';
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>
+                    <div class="file-path">${escapeHtml(f.filePath)}</div>
+                    <div class="file-name">${escapeHtml(f.fileName || '')}</div>
+                </td>
+                <td class="muted">${formatBytes(f.sizeBytes)}</td>
+                <td><span class="tier-badge ${tier === 'HOT' ? 'tier-hot' : 'tier-cold'}">${tier}</span></td>
+                <td class="muted">${escapeHtml(accessed)}</td>
+                <td>
+                    <div class="actions-cell">
+                        <button class="btn btn-ghost btn-sm" onclick="downloadFile('${escapeHtml(f.filePath)}')">Download</button>
+                        <button class="btn btn-warn btn-sm" ${!canAdmin ? 'disabled' : ''} onclick="invalidateCache('${escapeHtml(f.filePath)}')">Invalidate</button>
+                        <button class="btn btn-danger btn-sm" ${!canAdmin ? 'disabled' : ''} onclick="deleteFile('${escapeHtml(f.filePath)}')">Delete</button>
+                    </div>
+                </td>`;
+            tbody.appendChild(tr);
+        });
+    }
+
+    async function handleUploadSubmit(e) {
+        e.preventDefault();
+        if (currentRole === 'VIEWER') return;
+
+        const fileInput = document.getElementById('fileSelector');
+        const statusEl  = document.getElementById('uploadStatus');
+        const fileObj   = fileInput.files[0];
+        if (!fileObj) return;
+
+        const customPath = document.getElementById('customPathInput').value.trim();
+        const targetPath = customPath || fileObj.name;
+
+        setStatus(statusEl, 'info', `Uploading ${fileObj.name}…`);
+
+        const formData = new FormData();
+        formData.append('filePath', targetPath);
+        formData.append('file', fileObj);
+
+        try {
+            const res = await fetch(`${API_BASE}/upload?filePath=${encodeURIComponent(targetPath)}`, {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: formData,
             });
-        }
-
-        async function handleUploadSubmit(e) {
-            e.preventDefault();
-            if (currentRole === 'VIEWER') {
-                return alert('Role VIEWER is read-only and cannot upload files.');
+            if (res.ok) {
+                setStatus(statusEl, 'ok', `Uploaded: ${targetPath}`);
+                fileInput.value = '';
+                document.getElementById('customPathInput').value = '';
+                setTimeout(() => setStatus(statusEl, '', ''), 4000);
+                loadFiles();
+            } else {
+                const d = await res.json().catch(() => ({}));
+                throw new Error(d.error || d.message || `HTTP ${res.status}`);
             }
+        } catch (err) {
+            setStatus(statusEl, 'err', `Upload failed: ${err.message}`);
+        }
+    }
 
-            const fileInput = document.getElementById('fileSelector');
-            const statusDiv = document.getElementById('uploadStatus');
-            const fileObj = fileInput.files[0];
-
-            if (!fileObj) return alert('Please select a file');
-
-            const customPath = document.getElementById('customPathInput').value.trim();
-            const targetPath = customPath || fileObj.name;
-
-            statusDiv.textContent = `Uploading ${fileObj.name}...`;
-
-            const formData = new FormData();
-            formData.append('filePath', targetPath);
-            formData.append('file', fileObj);
-
-            try {
-                const headers = getAuthHeaders();
-                const res = await fetch(`${API_BASE}/upload?filePath=${encodeURIComponent(targetPath)}`, {
-                    method: 'POST',
-                    headers: headers,
-                    body: formData
-                });
-
-                if (res.ok) {
-                    statusDiv.textContent = `File uploaded successfully.`;
-                    fileInput.value = '';
-                    document.getElementById('customPathInput').value = '';
-                    setTimeout(() => statusDiv.textContent = '', 3000);
-                    loadFiles();
-                } else {
-                    const data = await res.json();
-                    throw new Error(data.error || data.message || 'Upload failed');
-                }
-            } catch (err) {
-                statusDiv.textContent = `Upload error: ${err.message}`;
+    async function downloadFile(filePath) {
+        try {
+            const res = await fetch(`${API_BASE}/download?filePath=${encodeURIComponent(filePath)}`, {
+                headers: getAuthHeaders(),
+            });
+            if (res.status === 202) {
+                const d = await res.json();
+                alert(`File is in Glacier cold storage.\n${d.message}`);
+                return;
             }
-        }
-
-        async function downloadFile(filePath) {
-            try {
-                const res = await fetch(`${API_BASE}/download?filePath=${encodeURIComponent(filePath)}`, {
-                    headers: getAuthHeaders()
-                });
-                if (!res.ok) {
-                    const errData = await res.json().catch(() => ({}));
-                    throw new Error(errData.error || `HTTP ${res.status}`);
-                }
-                const blob = await res.blob();
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = filePath.split('/').pop() || 'download';
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-            } catch (err) {
-                alert(`Download error: ${err.message}`);
+            if (!res.ok) {
+                const d = await res.json().catch(() => ({}));
+                throw new Error(d.error || `HTTP ${res.status}`);
             }
+            const blob = await res.blob();
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href     = url;
+            a.download = filePath.split('/').pop() || 'download';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            alert(`Download failed: ${err.message}`);
         }
+    }
 
-        async function deleteFile(filePath) {
-            if (currentRole !== 'ADMIN') {
-                return alert('Only ADMIN role is authorized to delete files.');
+    async function invalidateCache(filePath) {
+        if (currentRole !== 'ADMIN') return;
+        if (!confirm(`Invalidate local cache for:\n${filePath}\n\nNext download re-fetches from S3.`)) return;
+        try {
+            const res = await fetch(`${API_BASE}/invalidate?filePath=${encodeURIComponent(filePath)}`, {
+                method: 'POST',
+                headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`);
+            alert(`Cache invalidated: ${filePath}`);
+        } catch (err) {
+            alert(`Invalidate failed: ${err.message}`);
+        }
+    }
+
+    async function deleteFile(filePath) {
+        if (currentRole !== 'ADMIN') return;
+        if (!confirm(`Delete file:\n${filePath}\n\nThis removes local cache + metadata.`)) return;
+        try {
+            const res = await fetch(`${API_BASE}/files?filePath=${encodeURIComponent(filePath)}`, {
+                method: 'DELETE',
+                headers: getAuthHeaders(),
+            });
+            if (!res.ok) {
+                const d = await res.json().catch(() => ({}));
+                throw new Error(d.error || `HTTP ${res.status}`);
             }
-            if (!confirm(`Delete ${filePath}?`)) return;
-            try {
-                const res = await fetch(`${API_BASE}/files?filePath=${encodeURIComponent(filePath)}`, {
-                    method: 'DELETE',
-                    headers: getAuthHeaders()
-                });
-                if (res.ok) {
-                    loadFiles();
-                } else {
-                    const errData = await res.json().catch(() => ({}));
-                    throw new Error(errData.error || errData.message || 'Delete failed');
-                }
-            } catch (err) {
-                alert(`Delete error: ${err.message}`);
-            }
+            loadFiles();
+        } catch (err) {
+            alert(`Delete failed: ${err.message}`);
         }
+    }
 
-        function formatBytes(bytes) {
-            if (!bytes || bytes === 0) return '0 B';
-            const k = 1024;
-            const sizes = ['B', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-        }
+    function setStatus(el, type, msg) {
+        el.textContent = msg;
+        el.className = 'status-bar' + (type ? ' show ' + type : '');
+    }
 
-        function escapeHtml(str = '') {
-            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-        }
-    </script>
+    function formatBytes(bytes) {
+        if (!bytes) return '0 B';
+        const k = 1024, s = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + s[i];
+    }
+
+    function escapeHtml(s = '') {
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+</script>
 </body>
 </html>

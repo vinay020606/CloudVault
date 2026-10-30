@@ -10,6 +10,14 @@ const router = express.Router();
  * Returns signed JWT token
  */
 router.post('/token', (req, res) => {
+  const tokenApiKey = process.env.TOKEN_API_KEY;
+  if (tokenApiKey) {
+    const providedKey = req.headers['x-api-key'];
+    if (!providedKey || providedKey !== tokenApiKey) {
+      return res.status(401).json({ error: 'Unauthorized: Missing or invalid x-api-key header' });
+    }
+  }
+
   const { tenantId, role = ROLES.DEVELOPER, userId = 'user_101' } = req.body || {};
 
   if (!tenantId) {

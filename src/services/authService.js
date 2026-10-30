@@ -2,7 +2,10 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import config from '../config/index.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'cloudvault_super_secret_jwt_key_2026';
+const JWT_SECRET = process.env.JWT_SECRET || (() => {
+  console.warn('[Auth WARNING] JWT_SECRET is not set. Using insecure default. Set JWT_SECRET in production.');
+  return 'cloudvault_insecure_default_DO_NOT_USE_IN_PROD';
+})();
 
 export const ROLES = {
   ADMIN: 'ADMIN',

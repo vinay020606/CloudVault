@@ -33,6 +33,12 @@ router.post('/upload', authenticateTenant, requireRole(['ADMIN', 'DEVELOPER']), 
       const userRequestedPath = req.query.filePath || req.headers['x-file-path'] || 'uploaded_file.bin';
       const fileName = path.basename(userRequestedPath);
 
+      const maxUploadBytes = config.storage.maxUploadSizeBytes;
+      const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+      if (maxUploadBytes && contentLength > maxUploadBytes) {
+        return res.status(413).json({ error: `File too large. Maximum upload size is ${maxUploadBytes} bytes.` });
+      }
+
       // 1. Path sanitization
       const targetLocalPath = resolveTenantPath(tenantId, userRequestedPath);
       await fs.promises.mkdir(path.dirname(targetLocalPath), { recursive: true });
@@ -70,8 +76,8 @@ router.post('/upload', authenticateTenant, requireRole(['ADMIN', 'DEVELOPER']), 
 
       // 4. Queue background upload to S3 Hot Bucket via BullMQ Queue
       addS3UploadJob({ tenantId, filePath: userRequestedPath, targetLocalPath, s3Key })
-        .then((res) => {
-          if (res.status === 'FALLBACK_INLINE') {
+        .then((jobResult) => {
+          if (jobResult.status === 'FALLBACK_INLINE') {
             uploadFileToS3(s3Key, targetLocalPath, config.s3.hotBucket).catch(() => {});
           }
         })
@@ -98,7 +104,11 @@ router.post('/upload', authenticateTenant, requireRole(['ADMIN', 'DEVELOPER']), 
 
   // Handle multipart/form-data using busboy
   try {
-    const bb = busboy({ headers: req.headers });
+    const busboyOpts = { headers: req.headers };
+    if (config.storage.maxUploadSizeBytes) {
+      busboyOpts.limits = { fileSize: config.storage.maxUploadSizeBytes };
+    }
+    const bb = busboy(busboyOpts);
     let targetFilePath = req.query.filePath || '';
     let originalFileName = 'file.bin';
     let fileProcessingPromise = null;
@@ -172,8 +182,8 @@ router.post('/upload', authenticateTenant, requireRole(['ADMIN', 'DEVELOPER']), 
 
         // 4. Queue background upload to S3 Hot Bucket via BullMQ Queue
         addS3UploadJob({ tenantId, filePath: targetFilePath, targetLocalPath, s3Key })
-          .then((res) => {
-            if (res.status === 'FALLBACK_INLINE') {
+          .then((jobResult) => {
+            if (jobResult.status === 'FALLBACK_INLINE') {
               uploadFileToS3(s3Key, targetLocalPath, config.s3.hotBucket).catch(() => {});
             }
           })
@@ -239,7 +249,6 @@ router.get('/download', authenticateTenant, requireRole(['ADMIN', 'DEVELOPER', '
 
     const redis = getRedisClient();
     const fileKey = `${tenantId}:${userRequestedPath}`;
-    let fileBuffer = null;
 
     // Check local disk file
     let localExists = false;
@@ -251,13 +260,11 @@ router.get('/download', authenticateTenant, requireRole(['ADMIN', 'DEVELOPER', '
     }
 
     if (localExists) {
-      // Cache Hit! Serve immediately regardless of cloud tier (~3.8ms)
-      fileBuffer = await fs.promises.readFile(targetLocalPath);
+      // Cache Hit — touch LRU, serve from disk (~3.8ms)
       touchFile(redis, fileKey).catch(() => {});
     } else {
       // Cache Miss: Check Storage Tier (HOT vs COLD)
       if (metadata.currentTier === 'COLD') {
-        // Trigger Glacier Restore Job
         restoreGlacierObject(metadata.s3Key, config.s3.coldBucket).catch(() => {});
         return res.status(202).json({
           status: 'archived',
@@ -266,20 +273,21 @@ router.get('/download', authenticateTenant, requireRole(['ADMIN', 'DEVELOPER', '
         });
       }
 
-      // Cache Miss & Tier == 'HOT': Fetch from S3 Hot Bucket
-      console.log(`[Cache Miss] File ${fileKey} missing locally. Fetching via Singleflight from S3 Hot Bucket...`);
-      fileBuffer = await singleflightExecute(fileKey, async () => {
+      // Cache Miss & HOT — fetch from S3, write to disk, then stream
+      console.log(`[Cache Miss] ${fileKey} missing locally. Fetching via Singleflight from S3 Hot Bucket...`);
+      await singleflightExecute(fileKey, async () => {
         const s3Data = await downloadFileFromS3(metadata.s3Key, config.s3.hotBucket);
         await fs.promises.mkdir(path.dirname(targetLocalPath), { recursive: true });
         await fs.promises.writeFile(targetLocalPath, s3Data);
         touchFile(redis, fileKey).catch(() => {});
-        return s3Data;
       });
     }
 
-    const totalSizeBytes = fileBuffer.length;
+    // Get file size from disk (no full-file read into memory)
+    const stat = await fs.promises.stat(targetLocalPath);
+    const totalSizeBytes = stat.size;
 
-    // Support HTTP 200 / HTTP 206 Range headers
+    // Support HTTP 200 / HTTP 206 Range headers (RFC 7233)
     const rangeHeader = req.headers.range;
     let start = 0;
     let end = totalSizeBytes - 1;
@@ -290,13 +298,11 @@ router.get('/download', authenticateTenant, requireRole(['ADMIN', 'DEVELOPER', '
       if (match) {
         isRange = true;
         start = parseInt(match[1], 10);
-        if (match[2]) {
-          end = parseInt(match[2], 10);
-        }
+        end = match[2] ? Math.min(parseInt(match[2], 10), totalSizeBytes - 1) : totalSizeBytes - 1;
       }
     }
 
-    if (start >= totalSizeBytes || end >= totalSizeBytes || start > end) {
+    if (start >= totalSizeBytes || start > end) {
       return res.status(416).setHeader('Content-Range', `bytes */${totalSizeBytes}`).end();
     }
 
@@ -313,7 +319,9 @@ router.get('/download', authenticateTenant, requireRole(['ADMIN', 'DEVELOPER', '
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(metadata.fileName)}"`);
     res.setHeader('Content-Length', contentLength);
 
-    return res.end(fileBuffer.subarray(start, end + 1));
+    // Stream directly from disk — no full-file heap buffer
+    fs.createReadStream(targetLocalPath, { start, end }).pipe(res);
+    return;
   } catch (err) {
     if (err instanceof SecurityError) {
       return res.status(err.statusCode || 403).json({ error: err.message });
@@ -420,7 +428,7 @@ router.post('/invalidate', authenticateTenant, requireRole('ADMIN'), async (req,
  * AWS S3 Direct Event Notification Webhook
  * Triggered directly by S3 Event Notifications (ObjectCreated:* / ObjectRemoved:*)
  */
-router.post('/s3-event', async (req, res) => {
+router.post('/s3-event', authenticateTenant, requireRole('ADMIN'), async (req, res) => {
   try {
     const records = req.body?.Records || [];
     let processedCount = 0;

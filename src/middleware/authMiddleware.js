@@ -20,7 +20,8 @@ export function authenticateTenant(req, res, next) {
 
   if (!token) {
     if (bypassAuth) {
-      req.user = { tenantId: req.headers['x-tenant-id'] || 'default_tenant', role: 'ADMIN' };
+      req.user = { tenantId: req.headers['x-tenant-id'] || 'default_tenant', role: 'DEVELOPER' };
+      console.warn('[Auth WARNING] DISABLE_AUTH=true is active. All unauthenticated requests get DEVELOPER role. Do NOT use in production.');
       return next();
     }
     return res.status(401).json({

@@ -11,10 +11,15 @@ export function requestLogger(req, res, next) {
 
   res.setHeader('X-Request-ID', reqId);
 
-  res.on('finish', () => {
+  const originalEnd = res.end.bind(res);
+  res.end = function (...args) {
     const duration = (performance.now() - start).toFixed(2);
+    if (!res.headersSent) {
+      res.setHeader('X-Response-Time', `${duration}ms`);
+    }
     console.log(`[HTTP Proxy Log] ${req.method} ${req.originalUrl} -> Status ${res.statusCode} (${duration}ms) [ReqID: ${reqId.substring(0, 8)}]`);
-  });
+    return originalEnd(...args);
+  };
 
   next();
 }
