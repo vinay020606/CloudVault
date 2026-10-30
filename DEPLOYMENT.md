@@ -230,7 +230,7 @@ sudo certbot --nginx -d your-domain.com
 
 ## Option C — Production on AWS ECS Fargate
 
-For a real deployment. No servers to manage.
+For a real deployment. No servers to manage. The included CloudFormation template creates everything in one command.
 
 ### Architecture
 
@@ -238,115 +238,151 @@ For a real deployment. No servers to manage.
 Internet
    │
    ▼
-Application Load Balancer (HTTPS, ACM cert)
+CloudFront CDN (edge cache, DDoS protection, HTTPS)
    │
    ▼
-ECS Fargate Service (CloudVault container, auto-scaling)
+ALB (public subnets, 2 AZs)
    │
-   ├── Amazon RDS MySQL 8 (db.t3.micro, Multi-AZ optional)
-   ├── Amazon ElastiCache Redis (cache.t3.micro)
-   ├── S3 Hot Bucket (Standard)
-   ├── S3 Cold Bucket (Glacier)
-   └── AWS Secrets Manager (stores DB password, Redis password, JWT secret)
+   ▼
+ECS Fargate (private app subnets, 1–5 tasks, auto-scaling)
+   │           │           │           │
+   ▼           ▼           ▼           ▼
+RDS MySQL   ElastiCache  EFS shared   S3 (via VPC
+(private)   Redis        cache vol    Gateway Endpoint)
+             (private)   (all tasks)
+
+Outbound: private subnets → NAT Gateway → Internet Gateway
+          S3 traffic → VPC Gateway Endpoint (free, bypasses NAT)
+Secrets:  Secrets Manager → injected at task start via ECSTaskRole IAM
 ```
 
-### Steps (high level)
-
-**1. Push Docker image to ECR**
+### Step 1 — Deploy CloudFormation stack
 
 ```bash
-aws ecr create-repository --repository-name cloudvault --region us-east-1
-
-# Get login
-aws ecr get-login-password --region us-east-1 | \
-  docker login --username AWS --password-stdin <account>.dkr.ecr.us-east-1.amazonaws.com
-
-# Build and push
-docker build -t cloudvault .
-docker tag cloudvault:latest <account>.dkr.ecr.us-east-1.amazonaws.com/cloudvault:latest
-docker push <account>.dkr.ecr.us-east-1.amazonaws.com/cloudvault:latest
+aws cloudformation deploy \
+  --template-file deploy/cloudformation/infra.yml \
+  --stack-name cloudvault-prod \
+  --capabilities CAPABILITY_IAM \
+  --parameter-overrides \
+      Environment=production \
+      HotBucketName=<your-unique-hot-bucket-name> \
+      ColdBucketName=<your-unique-cold-bucket-name>
 ```
 
-**2. Create Secrets Manager secret**
+This creates: VPC, NAT Gateway, ALB, ECS Cluster, RDS, ElastiCache, **EFS**, CloudFront, ECR, Secrets Manager, all IAM roles.
+
+Get the stack outputs (you'll need these in later steps):
 
 ```bash
-aws secretsmanager create-secret \
-  --name cloudvault/production/secrets \
+aws cloudformation describe-stacks \
+  --stack-name cloudvault-prod \
+  --query 'Stacks[0].Outputs' \
+  --output table
+```
+
+Key outputs: `AppURL`, `ECRRepositoryURI`, `SecretsManagerARN`, `DBEndpoint`, `RedisEndpoint`, `EFSFileSystemId`.
+
+### Step 2 — Fill in Secrets Manager
+
+```bash
+SECRET_ARN=$(aws cloudformation describe-stacks \
+  --stack-name cloudvault-prod \
+  --query 'Stacks[0].Outputs[?OutputKey==`SecretsManagerARN`].OutputValue' \
+  --output text)
+
+aws secretsmanager put-secret-value \
+  --secret-id $SECRET_ARN \
   --secret-string '{
-    "JWT_SECRET": "<64-byte-hex>",
-    "TOKEN_API_KEY": "<random>",
-    "MYSQL_PASSWORD": "<strong>",
-    "REDIS_PASSWORD": "<strong>",
+    "JWT_SECRET": "<64-byte-hex — node -e console.log(require(crypto).randomBytes(64).toString(hex))>",
+    "TOKEN_API_KEY": "<random string>",
+    "MYSQL_PASSWORD": "<strong password>",
+    "REDIS_PASSWORD": "",
     "AWS_ACCESS_KEY_ID": "",
     "AWS_SECRET_ACCESS_KEY": ""
   }'
 ```
 
-Leave `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` empty — ECS task role handles S3 access automatically.
+Leave `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` empty — the ECS task IAM role handles S3 access automatically.
 
-**3. ECS Task Definition environment variables**
-
-Set these as non-secret env vars (no sensitive values here):
-
-```env
-PORT=3000
-AWS_REGION=us-east-1
-MYSQL_HOST=<rds-endpoint>
-MYSQL_PORT=3306
-MYSQL_USER=cloudvault
-MYSQL_DATABASE=cloudvault
-REDIS_HOST=<elasticache-endpoint>
-REDIS_PORT=6379
-TENANTS_STORAGE_DIR=/usr/src/app/storage/tenants
-MAX_CACHE_SIZE_BYTES=10737418240
-HOT_BUCKET=cloudvault-hot-standard
-S3_BUCKET_NAME=cloudvault-hot-standard
-COLD_BUCKET=cloudvault-cold-glacier
-SECRETS_MANAGER_NAME=cloudvault/production/secrets
-TIERING_INACTIVITY_DAYS=30
-```
-
-**4. IAM Task Role permissions**
-
-The ECS task role needs:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": ["s3:PutObject","s3:GetObject","s3:DeleteObject","s3:HeadObject","s3:CopyObject","s3:RestoreObject"],
-      "Resource": ["arn:aws:s3:::cloudvault-hot-standard/*","arn:aws:s3:::cloudvault-cold-glacier/*"]
-    },
-    {
-      "Effect": "Allow",
-      "Action": ["secretsmanager:GetSecretValue"],
-      "Resource": "arn:aws:secretsmanager:us-east-1:*:secret:cloudvault/production/*"
-    }
-  ]
-}
-```
-
-**5. Service auto-scaling**
+### Step 3 — Build and push Docker image
 
 ```bash
-# Scale on CPU > 70%
-aws application-autoscaling register-scalable-target \
-  --service-namespace ecs \
-  --resource-id service/<cluster>/<service> \
-  --scalable-dimension ecs:service:DesiredCount \
-  --min-capacity 1 \
-  --max-capacity 5
+ECR_URI=$(aws cloudformation describe-stacks \
+  --stack-name cloudvault-prod \
+  --query 'Stacks[0].Outputs[?OutputKey==`ECRRepositoryURI`].OutputValue' \
+  --output text)
+
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin $ECR_URI
+
+docker build -t cloudvault .
+docker tag cloudvault:latest $ECR_URI:latest
+docker push $ECR_URI:latest
 ```
+
+### Step 4 — Register ECS task definition
+
+```bash
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+REGION=us-east-1
+DB_HOST=$(aws cloudformation describe-stacks --stack-name cloudvault-prod \
+  --query 'Stacks[0].Outputs[?OutputKey==`DBEndpoint`].OutputValue' --output text)
+REDIS_HOST=$(aws cloudformation describe-stacks --stack-name cloudvault-prod \
+  --query 'Stacks[0].Outputs[?OutputKey==`RedisEndpoint`].OutputValue' --output text)
+EFS_ID=$(aws cloudformation describe-stacks --stack-name cloudvault-prod \
+  --query 'Stacks[0].Outputs[?OutputKey==`EFSFileSystemId`].OutputValue' --output text)
+
+sed -e "s/<ACCOUNT_ID>/$ACCOUNT_ID/g" \
+    -e "s/<REGION>/$REGION/g" \
+    -e "s/<RDS_ENDPOINT>/$DB_HOST/g" \
+    -e "s/<ELASTICACHE_PRIMARY_ENDPOINT>/$REDIS_HOST/g" \
+    -e "s/<HOT_BUCKET_NAME>/<your-hot-bucket>/g" \
+    -e "s/<COLD_BUCKET_NAME>/<your-cold-bucket>/g" \
+    -e "s/<EFS_FILE_SYSTEM_ID>/$EFS_ID/g" \
+    deploy/ecs-task-definition.json > /tmp/task-def-filled.json
+
+aws ecs register-task-definition --cli-input-json file:///tmp/task-def-filled.json
+```
+
+### Step 5 — Deploy to ECS
+
+```bash
+CLUSTER=$(aws cloudformation describe-stacks --stack-name cloudvault-prod \
+  --query 'Stacks[0].Outputs[?OutputKey==`ECSClusterName`].OutputValue' --output text)
+SERVICE=$(aws cloudformation describe-stacks --stack-name cloudvault-prod \
+  --query 'Stacks[0].Outputs[?OutputKey==`ECSServiceName`].OutputValue' --output text)
+
+aws ecs update-service \
+  --cluster $CLUSTER \
+  --service $SERVICE \
+  --force-new-deployment
+
+aws ecs wait services-stable --cluster $CLUSTER --services $SERVICE
+echo "Deployment complete"
+
+# Get app URL (CloudFront domain)
+aws cloudformation describe-stacks --stack-name cloudvault-prod \
+  --query 'Stacks[0].Outputs[?OutputKey==`AppURL`].OutputValue' --output text
+```
+
+### Notes on EFS (shared cache)
+
+- All ECS tasks mount the same EFS volume at `/usr/src/app/storage`
+- A file cached by Task 1 is instantly available to Task 2 — no duplicate S3 fetches
+- EFS uses elastic throughput (auto-scales with load)
+- EFS IA lifecycle moves untouched cache files to Infrequent Access tier after 30 days (cost saving)
+- `MAX_CACHE_SIZE_BYTES` is set to 100 GB in CloudFormation — EFS has no hard quota, it scales automatically
 
 ### Cost estimate (us-east-1, light load)
 
 | Service | Config | Monthly |
 |---|---|---|
-| ECS Fargate | 0.25 vCPU, 0.5 GB, 1 task | ~$9 |
+| ECS Fargate | 0.5 vCPU, 1 GB, 1 task | ~$18 |
 | RDS MySQL | db.t3.micro, 20 GB | ~$15 |
 | ElastiCache Redis | cache.t3.micro | ~$12 |
+| EFS | per-GB-stored + throughput | ~$5–20 |
+| NAT Gateway | per-hour + data (S3 bypassed) | ~$35 |
+| CloudFront | first 1 TB/mo free | ~$0 |
 | S3 | 100 GB + 100k requests | ~$3 |
 | ALB | 1 LCU | ~$16 |
 | **Total** | | **~$55/mo** |

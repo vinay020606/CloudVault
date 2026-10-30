@@ -345,7 +345,37 @@ Lifecycle: `markPendingSync` called when job enqueued → `clearPendingSync` cal
 
 Limitation (known): Set is in-process. Server restart clears it. Files queued before restart could theoretically be evicted before the worker re-picks the job. Mitigation: BullMQ persists jobs in Redis with retries, so the job will re-run and re-download from S3 if needed.
 
-### D. LocalStack demo environment
+### D. NAT Gateway + private route tables (deployment blocker fix)
+
+The original CloudFormation template created private subnets but never added route tables for them. Private subnets with no route table have zero outbound connectivity — ECS tasks couldn't reach ECR to pull the Docker image, couldn't reach Secrets Manager for credentials, and couldn't reach anything outside the VPC.
+
+Fix: Added `NatGatewayEIP` → `NatGateway` (in PublicSubnet1) → `PrivateRouteTable1/2` with `0.0.0.0/0 → NatGateway` → associated both private subnets. Tasks can now start.
+
+### E. S3 VPC Gateway Endpoint (cost fix)
+
+Without a VPC endpoint, all S3 traffic from ECS tasks exits through the NAT Gateway at $0.045/GB data-processing fee — significant for a storage gateway handling terabytes.
+
+Fix: Added `S3VPCEndpoint` (type: Gateway, free). S3 traffic routes within the AWS backbone. Both private route tables updated. Zero code change required — the AWS SDK automatically uses the endpoint.
+
+### F. EFS shared cache volume (correctness fix)
+
+Each Fargate task had its own ephemeral disk. In a 3-task deployment, a file cached by Task 1 was a cold miss on Task 2. The singleflight dedup also only worked within one process.
+
+Fix: Added `EFSFileSystem` (encrypted, elastic throughput, 30-day IA lifecycle) with mount targets and `EFSSecurityGroup` (port 2049 from `AppSecurityGroup` only). ECS task definition mounts EFS at `/usr/src/app/storage`. All tasks share one cache. `MAX_CACHE_SIZE_BYTES` raised to 100 GB.
+
+### G. CloudFront CDN (performance improvement)
+
+Every download previously hit the ALB directly from wherever the client was. CloudFront adds edge caching: first download from a region hits the ALB, subsequent downloads in the same region serve from the edge (~10ms).
+
+Added `CloudFrontDistribution` with: `GET /api/v1/files/*/*` cached 1hr at edge (with `Authorization`/`Range` forwarded); `/api/v1/auth/*` at TTL=0 (never cached). Also provides free DDoS protection (Shield Standard) and SSL termination.
+
+### H. Redis distributed lock in tiering cron (race condition fix)
+
+The tiering `setInterval` ran inside every ECS task simultaneously. With 3 tasks, all 3 queried MySQL and attempted to migrate the same files at once — 3× MySQL load, potential double-delete from S3.
+
+Fix: `SET NX EX 1800` lock at start of `runIntelligentTiering`. Only the task that acquires the lock runs the migration; others return `{ status: 'skipped', reason: 'lock_held_by_another_replica' }`. Lock released on completion and on query errors.
+
+### I. LocalStack demo environment
 
 One command runs a full working CloudVault including S3-compatible storage:
 ```bash
@@ -519,32 +549,37 @@ cloudvault:lru_files   — Sorted set
 ### VPC Architecture
 
 ```
-┌─────────────────────────────── VPC (10.0.0.0/16) ───────────────────────────────┐
-│                                                                                   │
-│  ┌────────── AZ-1 (us-east-1a) ──────────┐  ┌───── AZ-2 (us-east-1b) ─────────┐ │
-│  │                                        │  │                                  │ │
-│  │  ┌──── Public Subnet ────────────────┐ │  │ ┌── Public Subnet ─────────────┐ │ │
-│  │  │  10.0.1.0/24                      │ │  │ │ 10.0.2.0/24                  │ │ │
-│  │  │  ALB Node (half of ALB fleet)     │ │  │ │ ALB Node (other half)        │ │ │
-│  │  └───────────────────────────────────┘ │  │ └──────────────────────────────┘ │ │
-│  │                                        │  │                                  │ │
-│  │  ┌──── Private Subnet ───────────────┐ │  │ ┌── Private Subnet ────────────┐ │ │
-│  │  │  10.0.11.0/24                     │ │  │ │ 10.0.12.0/24                 │ │ │
-│  │  │  ECS Fargate Tasks                │ │  │ │ ECS Fargate Tasks            │ │ │
-│  │  │  (CloudVault containers)          │ │  │ │ (CloudVault containers)      │ │ │
-│  │  └───────────────────────────────────┘ │  │ └──────────────────────────────┘ │ │
-│  │                                        │  │                                  │ │
-│  │  ┌──── Private Subnet ───────────────┐ │  │ ┌── Private Subnet ────────────┐ │ │
-│  │  │  10.0.21.0/24                     │ │  │ │ 10.0.22.0/24                 │ │ │
-│  │  │  RDS MySQL (primary)              │ │  │ │ RDS MySQL (standby)          │ │ │
-│  │  │  ElastiCache Redis (primary)      │ │  │ │ ElastiCache Redis (replica)  │ │ │
-│  │  └───────────────────────────────────┘ │  │ └──────────────────────────────┘ │ │
-│  └────────────────────────────────────────┘  └──────────────────────────────────┘ │
-│                                                                                   │
-└───────────────────────────────────────────────────────────────────────────────────┘
-          │
-          ▼ Internet Gateway
-     Public Internet
+                         Public Internet
+                               │
+                    ┌──────────▼──────────┐
+                    │     CloudFront CDN   │  Edge cache, DDoS protection
+                    └──────────┬──────────┘
+                               │ HTTPS
+┌──────────────────────────────▼────────────────────────────── VPC (10.0.0.0/16) ──┐
+│                                                                                    │
+│  ┌──────────── AZ-1 (us-east-1a) ───────────┐  ┌──── AZ-2 (us-east-1b) ────────┐ │
+│  │  Public 10.0.1.0/24                       │  │  Public 10.0.2.0/24           │ │
+│  │  ┌─────────────────────────────────────┐  │  │  ┌────────────────────────┐   │ │
+│  │  │  ALB node          NAT Gateway+EIP  │  │  │  │  ALB node              │   │ │
+│  │  └─────────────────────────────────────┘  │  │  └────────────────────────┘   │ │
+│  │                    │ (outbound for private)│  │                               │ │
+│  │  Private 10.0.10.0/24                     │  │  Private 10.0.11.0/24         │ │
+│  │  ┌─────────────────────────────────────┐  │  │  ┌────────────────────────┐   │ │
+│  │  │  ECS Fargate Tasks                  │  │  │  │  ECS Fargate Tasks     │   │ │
+│  │  │  (CloudVault, mount EFS)            │◄─┼──┼─►│  (CloudVault, same EFS)│   │ │
+│  │  │                                     │  │  │  │                        │   │ │
+│  │  │  RDS MySQL (primary)                │  │  │  │  RDS MySQL (standby)   │   │ │
+│  │  │  ElastiCache Redis (primary)        │  │  │  │  Redis (replica)       │   │ │
+│  │  └─────────────────────────────────────┘  │  │  └────────────────────────┘   │ │
+│  └───────────────────────────────────────────┘  └───────────────────────────────┘ │
+│                                                                                    │
+│  EFS File System (shared across all tasks — all AZs via mount targets)            │
+│  S3 VPC Gateway Endpoint (S3 traffic stays within AWS — free, no NAT cost)        │
+└────────────────────────────────────────────────────────────────────────────────────┘
+                               │
+                    Internet Gateway
+                               │
+                         Public Internet
 ```
 
 ### Security Groups
