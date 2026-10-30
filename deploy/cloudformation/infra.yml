@@ -1,17 +1,17 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
   CloudVault — Full Production Infrastructure
-  ECS Fargate + ALB + RDS MySQL + ElastiCache Redis + S3 + ECR + Secrets Manager
+  ECS Fargate + ALB + CloudFront + RDS MySQL + ElastiCache Redis
+  + EFS shared cache + S3 + VPC Endpoints + NAT Gateway + Secrets Manager
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PARAMETERS — fill these in before deploying
+# PARAMETERS
 # ─────────────────────────────────────────────────────────────────────────────
 Parameters:
 
   AppName:
     Type: String
     Default: cloudvault
-    Description: Used as a prefix for all resource names.
 
   Environment:
     Type: String
@@ -44,20 +44,19 @@ Parameters:
     Type: Number
     Default: 3000
 
-  # Replace with your ECR image URI after pushing: <account>.dkr.ecr.<region>.amazonaws.com/cloudvault:latest
   AppImageUri:
     Type: String
     Default: ""
-    Description: "ECR image URI. Fill in after: aws ecr create-repository --repository-name cloudvault"
+    Description: "ECR image URI. Fill after: aws ecr create-repository --repository-name cloudvault"
 
   AppTaskCpu:
     Type: Number
-    Default: 256
+    Default: 512
     AllowedValues: [256, 512, 1024, 2048, 4096]
 
   AppTaskMemory:
     Type: Number
-    Default: 512
+    Default: 1024
     AllowedValues: [512, 1024, 2048, 4096, 8192]
 
   AppDesiredCount:
@@ -87,30 +86,37 @@ Parameters:
   HotBucketName:
     Type: String
     Default: ""
-    Description: "Globally unique S3 bucket name for hot (Standard) storage. e.g. mycompany-cloudvault-hot"
+    Description: "Globally unique name. e.g. mycompany-cloudvault-hot"
 
   ColdBucketName:
     Type: String
     Default: ""
-    Description: "Globally unique S3 bucket name for cold (Glacier) storage. e.g. mycompany-cloudvault-cold"
+    Description: "Globally unique name. e.g. mycompany-cloudvault-cold"
 
   TieringInactivityDays:
     Type: Number
     Default: 30
 
   # ── HTTPS ────────────────────────────────────────────────────────────────────
-  # Leave blank to use HTTP only (fine for demo). Set to ACM certificate ARN for HTTPS.
   CertificateArn:
     Type: String
     Default: ""
-    Description: "ACM Certificate ARN for HTTPS on the ALB. Leave blank for HTTP-only demo."
+    Description: "ACM Certificate ARN for HTTPS on ALB. Leave blank for HTTP-only."
+
+  # ── CloudFront ───────────────────────────────────────────────────────────────
+  EnableCloudFront:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Deploy CloudFront CDN in front of ALB."
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONDITIONS
 # ─────────────────────────────────────────────────────────────────────────────
 Conditions:
-  HasCertificate: !Not [!Equals [!Ref CertificateArn, ""]]
+  HasCertificate:   !Not [!Equals [!Ref CertificateArn, ""]]
+  UseCloudFront:    !Equals [!Ref EnableCloudFront, "true"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -118,7 +124,7 @@ Conditions:
 # ─────────────────────────────────────────────────────────────────────────────
 Resources:
 
-  # ── VPC & Networking ─────────────────────────────────────────────────────────
+  # ── VPC ──────────────────────────────────────────────────────────────────────
 
   VPC:
     Type: AWS::EC2::VPC
@@ -138,6 +144,8 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
+
+  # ── Public Subnets ────────────────────────────────────────────────────────────
 
   PublicSubnet1:
     Type: AWS::EC2::Subnet
@@ -160,26 +168,6 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${AppName}-public-2
-
-  PrivateSubnet1:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      CidrBlock: !Ref PrivateSubnet1Cidr
-      AvailabilityZone: !Select [0, !GetAZs ""]
-      Tags:
-        - Key: Name
-          Value: !Sub ${AppName}-private-1
-
-  PrivateSubnet2:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      CidrBlock: !Ref PrivateSubnet2Cidr
-      AvailabilityZone: !Select [1, !GetAZs ""]
-      Tags:
-        - Key: Name
-          Value: !Sub ${AppName}-private-2
 
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
@@ -206,7 +194,79 @@ Resources:
       SubnetId: !Ref PublicSubnet2
       RouteTableId: !Ref PublicRouteTable
 
-  # ── Security Groups ──────────────────────────────────────────────────────────
+  # ── NAT Gateway (FIX: private subnets had no outbound route) ─────────────────
+  # Required for ECS tasks to reach ECR (image pull), Secrets Manager, and internet.
+  # One NAT GW in AZ-1; tasks in AZ-2 use the same one (cost vs HA trade-off).
+  # For full HA, add a second NAT GW in PublicSubnet2 and a separate route table
+  # for PrivateSubnet2 pointing to it.
+
+  NatGatewayEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-nat
+
+  # ── Private Route Tables (FIX: subnets existed but had no routing) ────────────
+
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable1
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable2
+
+  # ── S3 VPC Gateway Endpoint (free — S3 traffic stays within AWS backbone) ─────
+  # Eliminates NAT Gateway data-transfer cost for all S3 operations.
+
+  S3VPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        - !Ref PrivateRouteTable1
+        - !Ref PrivateRouteTable2
+
+  # ── Security Groups ───────────────────────────────────────────────────────────
 
   ALBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -237,7 +297,7 @@ Resources:
   DBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Allow MySQL from ECS tasks
+      GroupDescription: Allow MySQL from ECS tasks only
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -248,7 +308,7 @@ Resources:
   RedisSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Allow Redis from ECS tasks
+      GroupDescription: Allow Redis from ECS tasks only
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -256,7 +316,54 @@ Resources:
           ToPort: 6379
           SourceSecurityGroupId: !Ref AppSecurityGroup
 
-  # ── S3 Buckets ───────────────────────────────────────────────────────────────
+  EFSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow NFS from ECS tasks only
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref AppSecurityGroup
+
+  # ── EFS Shared Cache (FIX: each Fargate task had its own isolated SSD cache) ──
+  # All ECS tasks mount the same EFS volume at /usr/src/app/storage.
+  # A file cached by Task 1 is immediately available to Task 2 — no duplicate S3 fetches.
+  # Performance mode: generalPurpose (sufficient for file caching workloads).
+  # Throughput mode: elastic (auto-scales; no need to provision throughput upfront).
+
+  EFSFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      Encrypted: true
+      PerformanceMode: generalPurpose
+      ThroughputMode: elastic
+      BackupPolicy:
+        Status: ENABLED
+      LifecyclePolicies:
+        - TransitionToIA: AFTER_30_DAYS          # move cold EFS files to IA tier
+      FileSystemTags:
+        - Key: Name
+          Value: !Sub ${AppName}-cache
+
+  EFSMountTarget1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroups:
+        - !Ref EFSSecurityGroup
+
+  EFSMountTarget2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      SubnetId: !Ref PrivateSubnet2
+      SecurityGroups:
+        - !Ref EFSSecurityGroup
+
+  # ── S3 Buckets ────────────────────────────────────────────────────────────────
 
   HotBucket:
     Type: AWS::S3::Bucket
@@ -327,8 +434,6 @@ Resources:
           "AWS_ACCESS_KEY_ID": "",
           "AWS_SECRET_ACCESS_KEY": ""
         }
-      # Note: fill in the values in AWS Console or via CLI after stack creation:
-      # aws secretsmanager put-secret-value --secret-id <arn> --secret-string '{"JWT_SECRET":"...","MYSQL_PASSWORD":"..."}'
 
   # ── RDS MySQL ─────────────────────────────────────────────────────────────────
 
@@ -350,7 +455,7 @@ Resources:
       EngineVersion: "8.0"
       DBName: !Ref DBName
       MasterUsername: !Ref DBUsername
-      ManageMasterUserPassword: true             # RDS manages the password in Secrets Manager automatically
+      ManageMasterUserPassword: true
       AllocatedStorage: "20"
       StorageType: gp3
       MultiAZ: false                             # set true for production HA
@@ -359,6 +464,8 @@ Resources:
       VPCSecurityGroups:
         - !Ref DBSecurityGroup
       BackupRetentionPeriod: 7
+      PreferredBackupWindow: "03:00-04:00"
+      PreferredMaintenanceWindow: "mon:04:00-mon:05:00"
       DeletionProtection: false                  # set true for production
 
   # ── ElastiCache Redis ─────────────────────────────────────────────────────────
@@ -379,8 +486,8 @@ Resources:
       CacheNodeType: !Ref RedisNodeType
       Engine: redis
       EngineVersion: "7.0"
-      NumCacheClusters: 1                        # increase to 2 for read replica
-      AutomaticFailoverEnabled: false            # set true when NumCacheClusters >= 2
+      NumCacheClusters: 1
+      AutomaticFailoverEnabled: false
       CacheSubnetGroupName: !Ref RedisSubnetGroup
       SecurityGroupIds:
         - !Ref RedisSecurityGroup
@@ -435,8 +542,11 @@ Resources:
                   - s3:HeadObject
                   - s3:CopyObject
                   - s3:RestoreObject
+                  - s3:ListBucket
                 Resource:
+                  - !Sub arn:aws:s3:::${HotBucketName}
                   - !Sub arn:aws:s3:::${HotBucketName}/*
+                  - !Sub arn:aws:s3:::${ColdBucketName}
                   - !Sub arn:aws:s3:::${ColdBucketName}/*
         - PolicyName: SecretsAccess
           PolicyDocument:
@@ -445,6 +555,16 @@ Resources:
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
                 Resource: !Ref AppSecret
+        - PolicyName: EFSAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:ClientMount
+                  - elasticfilesystem:ClientWrite
+                  - elasticfilesystem:ClientRootAccess
+                Resource: !GetAtt EFSFileSystem.Arn
 
   # ── ECS ───────────────────────────────────────────────────────────────────────
 
@@ -467,6 +587,9 @@ Resources:
 
   ECSTaskDefinition:
     Type: AWS::ECS::TaskDefinition
+    DependsOn:
+      - EFSMountTarget1
+      - EFSMountTarget2
     Properties:
       Family: !Sub ${AppName}-task
       Cpu: !Ref AppTaskCpu
@@ -476,6 +599,14 @@ Resources:
         - FARGATE
       ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      # ── EFS Volume (shared cache across all Fargate tasks) ──────────────────
+      Volumes:
+        - Name: cloudvault-storage
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref EFSFileSystem
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              IAM: ENABLED
       ContainerDefinitions:
         - Name: !Ref AppName
           Image: !Ref AppImageUri
@@ -483,6 +614,11 @@ Resources:
           PortMappings:
             - ContainerPort: !Ref AppPort
               Protocol: tcp
+          # Mount EFS volume at the storage directory
+          MountPoints:
+            - SourceVolume: cloudvault-storage
+              ContainerPath: /usr/src/app/storage
+              ReadOnly: false
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -515,7 +651,7 @@ Resources:
             - Name: TENANTS_STORAGE_DIR
               Value: /usr/src/app/storage/tenants
             - Name: MAX_CACHE_SIZE_BYTES
-              Value: "10737418240"
+              Value: "107374182400"              # 100GB (EFS scales automatically)
             - Name: HOT_BUCKET
               Value: !Ref HotBucketName
             - Name: S3_BUCKET_NAME
@@ -526,8 +662,6 @@ Resources:
               Value: !Sub "${TieringInactivityDays}"
             - Name: SECRETS_MANAGER_NAME
               Value: !Sub ${AppName}/${Environment}/secrets
-          # Secrets are loaded at runtime by the app via SECRETS_MANAGER_NAME.
-          # JWT_SECRET, MYSQL_PASSWORD, REDIS_PASSWORD come from Secrets Manager — not injected here.
 
   ECSService:
     Type: AWS::ECS::Service
@@ -614,7 +748,6 @@ Resources:
       Port: 80
       Protocol: HTTP
       DefaultActions:
-        # If you have a cert, redirect HTTP → HTTPS. Otherwise forward directly.
         - !If
           - HasCertificate
           - Type: redirect
@@ -638,6 +771,87 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref ALBTargetGroup
 
+  # ── CloudFront CDN (FIX: no CDN layer — every request hit the ALB directly) ───
+  # CloudFront sits in front of the ALB. Benefits:
+  #   - Global edge cache for hot file downloads (< 10ms for repeat downloads)
+  #   - DDoS protection via AWS Shield Standard (free)
+  #   - Free SSL/TLS termination at edge without an ACM cert in us-east-1
+  # Cache policy: only GET/HEAD are cached. POST/DELETE bypass CloudFront → ALB.
+  # Auth endpoints are never cached (Authorization header forwarded).
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Condition: UseCloudFront
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub ${AppName} CDN
+        HttpVersion: http2
+        PriceClass: PriceClass_100            # US, Canada, Europe edge locations
+        Origins:
+          - Id: ALBOrigin
+            DomainName: !GetAtt ALB.DNSName
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: !If
+                - HasCertificate
+                - https-only
+                - http-only
+              OriginSSLProtocols:
+                - TLSv1.2
+        DefaultCacheBehavior:
+          TargetOriginId: ALBOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+          CachedMethods: [GET, HEAD]
+          # Forward all headers to origin (required for JWT auth to work)
+          ForwardedValues:
+            QueryString: true
+            Headers:
+              - Authorization
+              - x-tenant-id
+              - Range
+            Cookies:
+              Forward: none
+          # Only cache GET downloads — not uploads, deletes, or auth
+          DefaultTTL: 0
+          MinTTL: 0
+          MaxTTL: 86400
+        CacheBehaviors:
+          # Cache file downloads at the edge for 1 hour
+          - PathPattern: /api/v1/files/*/*
+            TargetOriginId: ALBOrigin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD]
+            CachedMethods: [GET, HEAD]
+            ForwardedValues:
+              QueryString: false
+              Headers:
+                - Authorization
+                - Range
+              Cookies:
+                Forward: none
+            DefaultTTL: 3600
+            MinTTL: 0
+            MaxTTL: 86400
+          # Never cache auth, upload, or admin endpoints
+          - PathPattern: /api/v1/auth/*
+            TargetOriginId: ALBOrigin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+            CachedMethods: [GET, HEAD]
+            ForwardedValues:
+              QueryString: true
+              Headers:
+                - Authorization
+                - x-api-key
+              Cookies:
+                Forward: none
+            DefaultTTL: 0
+            MinTTL: 0
+            MaxTTL: 0
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # OUTPUTS
@@ -645,11 +859,18 @@ Resources:
 Outputs:
 
   AppURL:
-    Description: CloudVault public URL
-    Value: !Sub http://${ALB.DNSName}
+    Description: CloudVault public URL (CloudFront if enabled, otherwise ALB)
+    Value: !If
+      - UseCloudFront
+      - !Sub https://${CloudFrontDistribution.DomainName}
+      - !Sub http://${ALB.DNSName}
+
+  ALBDNSName:
+    Description: ALB DNS name (use as CloudFront origin if needed)
+    Value: !GetAtt ALB.DNSName
 
   ECRRepositoryURI:
-    Description: ECR repository URI — use this in AppImageUri parameter
+    Description: ECR repository URI — use as AppImageUri parameter
     Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ECRRepository}
 
   SecretsManagerARN:
@@ -664,6 +885,10 @@ Outputs:
     Description: ElastiCache Redis primary endpoint
     Value: !GetAtt RedisCluster.PrimaryEndPoint.Address
 
+  EFSFileSystemId:
+    Description: EFS file system ID (shared cache volume)
+    Value: !Ref EFSFileSystem
+
   ECSClusterName:
     Description: ECS Cluster name
     Value: !Ref ECSCluster
@@ -671,3 +896,7 @@ Outputs:
   ECSServiceName:
     Description: ECS Service name
     Value: !Sub ${AppName}-service
+
+  NatGatewayEIP:
+    Description: NAT Gateway Elastic IP — whitelist this IP in any external firewall
+    Value: !Ref NatGatewayEIP
