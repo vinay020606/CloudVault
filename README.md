@@ -25,31 +25,41 @@ CloudVault is a **multi-tenant storage gateway** that sits in front of AWS S3. I
 ## Architecture Overview
 
 ```
-Client
+Internet
   │
   ▼
-Express Gateway (Node.js 20 ESM)
+CloudFront CDN (edge cache — GET /api/v1/files/* cached 1hr at edge)
+  │
+  ▼
+ALB (public subnets, 2 AZs)
+  │  HTTP/HTTPS → port 3000
+  ▼
+ECS Fargate Tasks (private subnets)
   ├── Auth middleware (JWT + RBAC)
   ├── Path sanitizer (resolveTenantPath — blocks traversal)
   │
-  ├── Upload path:
-  │     Write to ./storage/tenants/<tenantId>/
-  │     → markPendingSync → BullMQ enqueue → 202 response
-  │     → Worker dequeues → streams to S3
+  ├── Upload:
+  │     Write to EFS /storage/tenants/<tenantId>/   ← shared across all tasks
+  │     → markPendingSync → BullMQ enqueue → 202
+  │     → Worker dequeues → streams to S3 (via VPC Gateway Endpoint — free)
   │
-  └── Download path:
-        Cache hit?  → touch Redis LRU → stream from disk (206/200)
-        Cache miss? → singleflight S3 fetch → write disk → stream (206/200)
+  └── Download:
+        Cache hit?  → touch Redis LRU → stream from EFS (206/200)
+        Cache miss? → singleflight S3 fetch → write EFS → stream (206/200)
         Cold tier?  → 503 (Glacier restore required)
+  │
+  ├── RDS MySQL 8 (private DB subnets) — metadata
+  ├── ElastiCache Redis 7 (private DB subnets) — LRU sorted set
+  └── EFS (shared cache volume, mounted by all tasks)
 
-Background jobs:
-  BullMQ Worker   — dequeues S3 uploads, 5 retries + backoff
-  Tiering Cron    — every 30 min: moves stale files to Glacier
-  Eviction Loop   — per upload: LRU evict if disk > MAX_CACHE_SIZE_BYTES
+Background:
+  BullMQ Worker  — dequeues S3 uploads, 5 retries + backoff
+  Tiering Cron   — every 30 min, Redis distributed lock (one task only)
+  Eviction Loop  — per upload: LRU evict if usage > MAX_CACHE_SIZE_BYTES
 
-Data stores:
-  MySQL 8   — file metadata (tenant_id, s3_key, tier, last_accessed_at)
-  Redis     — LRU sorted set (cloudvault:lru_files, scored by timestamp)
+Outbound routing (private subnets):
+  S3 traffic     → VPC Gateway Endpoint (free, stays in AWS backbone)
+  Everything else → NAT Gateway → Internet Gateway
 ```
 
 ---
@@ -188,13 +198,34 @@ Dockerfile                    # Non-root user, production deps only
 
 ---
 
+## Infrastructure (CloudFormation)
+
+The included `deploy/cloudformation/infra.yml` creates the full stack in one command:
+
+| Resource | Detail |
+|---|---|
+| VPC | 10.0.0.0/16, 2 public + 2 private subnets across 2 AZs |
+| NAT Gateway | EIP in PublicSubnet1 — gives private tasks outbound internet |
+| S3 VPC Gateway Endpoint | S3 traffic stays within AWS backbone (free) |
+| ALB | Internet-facing, HTTP/HTTPS, health-checks `/health` |
+| ECS Fargate | Private subnets, 1–5 tasks, CPU auto-scaling at 70% |
+| EFS | Encrypted shared cache volume, elastic throughput, 30-day IA lifecycle |
+| RDS MySQL 8 | Private subnets, 7-day backups, snapshot on delete |
+| ElastiCache Redis 7 | Private subnets, encrypted at rest + in transit |
+| CloudFront | Edge cache, HTTP/2, DDoS protection (Shield Standard) |
+| ECR | Image scanning on push, keeps last 5 images |
+| Secrets Manager | Runtime credential injection — no credentials in image or task definition |
+| IAM | ECSTaskExecutionRole (ECR + CW + Secrets), ECSTaskRole (S3 + Secrets + EFS) |
+
+---
+
 ## Documentation
 
 | File | Contents |
 |---|---|
 | [DOCS.md](./DOCS.md) | Full API reference, all env vars, curl examples |
 | [DEPLOYMENT.md](./DEPLOYMENT.md) | All 3 deployment options with exact commands |
-| [MASTER_REFERENCE.md](./MASTER_REFERENCE.md) | Full project history, all 28 bugs found and fixed, architecture flows, infrastructure diagrams, interview Q&A |
+| [MASTER_REFERENCE.md](./MASTER_REFERENCE.md) | Full project history, all bugs found and fixed, architecture flows, infrastructure diagrams, interview Q&A |
 
 ---
 
