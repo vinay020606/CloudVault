@@ -16,6 +16,11 @@ export async function runIntelligentTiering(inactivityDays) {
   const hotBucket = config.s3.hotBucket;
   const coldBucket = config.s3.coldBucket;
 
+  if (!hotBucket || !coldBucket) {
+    console.warn('[Tiering Worker] HOT_BUCKET or COLD_BUCKET not configured. Skipping tiering run.');
+    return { status: 'skipped', reason: 'buckets_not_configured' };
+  }
+
   const sql = `
     SELECT id, tenant_id, file_path, file_name, s3_key, current_tier, last_accessed_at
     FROM files
@@ -45,11 +50,12 @@ export async function runIntelligentTiering(inactivityDays) {
       // 1. Copy object from Hot Bucket to Cold Glacier Bucket
       await copyObjectBetweenBuckets(hotBucket, coldBucket, file.s3_key, 'GLACIER');
 
-      // 2. Delete object from Hot Bucket
-      await deleteObjectFromBucket(hotBucket, file.s3_key);
-
-      // 3. Update metadata in MySQL
+      // 2. Update metadata in MySQL BEFORE deleting from hot bucket
+      // If this fails, the file is still safe in hot S3 and will be re-tiered next run
       await query(`UPDATE files SET current_tier = 'COLD' WHERE id = ?`, [file.id]);
+
+      // 3. Delete object from Hot Bucket only after metadata is committed
+      await deleteObjectFromBucket(hotBucket, file.s3_key);
 
       console.log(`[Tiering Worker] Successfully migrated file ID ${file.id} (${file.s3_key}) -> COLD tier.`);
       migratedFiles.push(file.s3_key);

@@ -1,5 +1,6 @@
 import { Queue } from 'bullmq';
 import config from '../config/index.js';
+import { markPendingSync } from './syncTracker.js';
 
 let s3UploadQueue = null;
 
@@ -12,7 +13,10 @@ export function getS3UploadQueue() {
       const connection = {
         host: config.redis.host,
         port: config.redis.port,
+        password: config.redis.password || undefined,
         maxRetriesPerRequest: null,
+        enableOfflineQueue: false,  // fail immediately when Redis is down, don't buffer
+        connectTimeout: 5000,
       };
 
       s3UploadQueue = new Queue('s3-upload-queue', {
@@ -51,25 +55,25 @@ export function getS3UploadQueue() {
  */
 export async function addS3UploadJob(payload) {
   const { tenantId, filePath, targetLocalPath, s3Key, bucketName = config.s3.hotBucket } = payload;
-  const jobId = `s3-upload-${tenantId}-${filePath.replace(/[/\\?%*:|"<>]/g, '_')}`;
+  const jobId = `s3-upload-${tenantId}-${filePath.replace(/[/\\?%*:|"<>]/g, '_')}-${Date.now()}`;
 
   const queue = getS3UploadQueue();
 
   if (queue) {
     try {
-      const job = await queue.add(
-        'uploadFileToS3',
-        {
-          tenantId,
-          filePath,
-          targetLocalPath,
-          s3Key,
-          bucketName,
-          queuedAt: Date.now(),
-        },
-        { jobId }
+      const addTimeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Queue add timeout after 4s')), 4000)
       );
+      const job = await Promise.race([
+        queue.add(
+          'uploadFileToS3',
+          { tenantId, filePath, targetLocalPath, s3Key, bucketName, queuedAt: Date.now() },
+          { jobId }
+        ),
+        addTimeout,
+      ]);
       console.log(`[BullMQ Enqueued] Job ${job.id} enqueued for S3 sync: ${s3Key}`);
+      markPendingSync(`${tenantId}:${filePath}`);
       return { status: 'QUEUED', jobId: job.id };
     } catch (err) {
       console.warn(`[BullMQ Enqueue Failed for ${s3Key}]: ${err.message}. Falling back to inline async execution.`);

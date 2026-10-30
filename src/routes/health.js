@@ -3,6 +3,7 @@ import { getPool } from '../db/mysql.js';
 import { getRedisClient } from '../db/redis.js';
 import { calculateTenantsFolderSize } from '../services/evictionService.js';
 import config from '../config/index.js';
+import { authenticateTenant, requireRole } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -22,7 +23,7 @@ router.get('/', (req, res) => {
  * GET /health/metrics
  * Comprehensive system infrastructure health and storage metrics
  */
-router.get('/metrics', async (req, res) => {
+router.get('/metrics', authenticateTenant, requireRole('ADMIN'), async (req, res) => {
   const metrics = {
     status: 'healthy',
     timestamp: new Date().toISOString(),

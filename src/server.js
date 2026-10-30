@@ -15,7 +15,8 @@ import healthRoutes from './routes/health.js';
 import authRoutes from './routes/auth.js';
 import requestLogger from './middleware/requestLogger.js';
 
-import { fetchAwsSecret } from './services/secretsService.js';
+import { applyAwsSecrets } from './services/secretsService.js';
+import awsConfig from './config/aws.js';
 
 const app = express();
 
@@ -37,17 +38,14 @@ app.use('/health', healthRoutes);
 async function startServer() {
   console.log('🚀 Starting CloudVault Gateway Server...');
 
-  // Dynamically load secrets from AWS Secrets Manager if configured
-  const secretName = process.env.SECRETS_MANAGER_NAME || process.env.AWS_SECRET_NAME;
-  if (secretName) {
-    const secrets = await fetchAwsSecret(secretName, config.s3.region);
-    if (secrets) {
-      if (secrets.AWS_ACCESS_KEY_ID) config.s3.accessKeyId = secrets.AWS_ACCESS_KEY_ID;
-      if (secrets.AWS_SECRET_ACCESS_KEY) config.s3.secretAccessKey = secrets.AWS_SECRET_ACCESS_KEY;
-      if (secrets.S3_BUCKET_NAME) {
-        config.s3.bucketName = secrets.S3_BUCKET_NAME;
-        config.s3.hotBucket = secrets.S3_BUCKET_NAME;
-      }
+  // Load credentials from AWS Secrets Manager if configured (overrides env vars)
+  if (awsConfig.secretsManagerName) {
+    const secrets = await applyAwsSecrets(awsConfig.secretsManagerName, awsConfig.region);
+    if (secrets?.MYSQL_PASSWORD) {
+      config.mysql.password = secrets.MYSQL_PASSWORD;
+    }
+    if (secrets?.REDIS_PASSWORD) {
+      config.redis.password = secrets.REDIS_PASSWORD;
     }
   }
 
@@ -75,8 +73,17 @@ async function startServer() {
   startS3UploadWorker({ concurrency: 5 });
 
   const PORT = config.port;
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`✅ CloudVault Gateway listening at http://localhost:${PORT}`);
+  });
+
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`❌ Port ${PORT} is already in use. Set a different PORT in .env.`);
+    } else {
+      console.error('❌ Server error:', err.message);
+    }
+    process.exit(1);
   });
 }
 

@@ -52,7 +52,9 @@ export async function initDB() {
       try {
         await currentPool.query(q);
       } catch (e) {
-        // Ignore column already exists error (ER_DUP_FIELDNAME / 1060)
+        if (e.errno !== 1060) {
+          console.warn('[MySQL] Schema migration warning:', e.message);
+        }
       }
     }
 

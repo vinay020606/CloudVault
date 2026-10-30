@@ -11,6 +11,7 @@ import { query } from '../db/mysql.js';
  * @returns {Promise<Object>} Created/updated file metadata record
  */
 const inMemoryFileStore = new Map();
+const IN_MEMORY_MAX_SIZE = 5000;
 
 /**
  * Inserts or updates a file record in MySQL with in-memory fallback.
@@ -59,6 +60,10 @@ export async function createFileRecord(tenantId, filePath, fileName, sizeBytes, 
 
   // Always sync to in-memory store for instant zero-downtime lookups
   const storeKey = `${tenantId}:${filePath}`;
+  if (inMemoryFileStore.size >= IN_MEMORY_MAX_SIZE) {
+    const firstKey = inMemoryFileStore.keys().next().value;
+    inMemoryFileStore.delete(firstKey);
+  }
   inMemoryFileStore.set(storeKey, fileRecord);
 
   return fileRecord;

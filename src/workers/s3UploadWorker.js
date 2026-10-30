@@ -1,6 +1,7 @@
 import { Worker } from 'bullmq';
 import config from '../config/index.js';
 import { uploadFileToS3 } from '../services/s3Service.js';
+import { clearPendingSync } from '../services/syncTracker.js';
 
 let s3UploadWorker = null;
 
@@ -21,6 +22,7 @@ export function startS3UploadWorker(options = {}) {
     const connection = {
       host: config.redis.host,
       port: config.redis.port,
+      password: config.redis.password || undefined,
       maxRetriesPerRequest: null,
     };
 
@@ -44,10 +46,18 @@ export function startS3UploadWorker(options = {}) {
 
     s3UploadWorker.on('completed', (job) => {
       console.log(`[BullMQ Event] Job ${job.id} finished processing.`);
+      if (job.data?.tenantId && job.data?.filePath) {
+        clearPendingSync(`${job.data.tenantId}:${job.data.filePath}`);
+      }
     });
 
     s3UploadWorker.on('failed', (job, err) => {
       console.error(`[BullMQ Event Failed] Job ${job?.id} failed (Attempt ${job?.attemptsMade}/${job?.opts?.attempts}): ${err.message}`);
+      if (job?.attemptsMade >= (job?.opts?.attempts || 5)) {
+        if (job?.data?.tenantId && job?.data?.filePath) {
+          clearPendingSync(`${job.data.tenantId}:${job.data.filePath}`);
+        }
+      }
     });
 
     s3UploadWorker.on('error', (err) => {

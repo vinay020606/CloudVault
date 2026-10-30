@@ -11,7 +11,7 @@ import { uploadFileToS3, downloadFileFromS3, restoreGlacierObject } from '../ser
 import { addS3UploadJob } from '../services/queueService.js';
 import { getRedisClient } from '../db/redis.js';
 import { query } from '../db/mysql.js';
-import { authenticateTenant, hasPermission } from '../middleware/authMiddleware.js';
+import { authenticateTenant } from '../middleware/authMiddleware.js';
 import { hasPermission as checkRolePermission } from '../services/authService.js';
 
 const router = express.Router();
@@ -42,6 +42,12 @@ router.all('/:tenantId/*', authenticateTenant, async (req, res) => {
     try {
       const fileName = path.basename(userRequestedPath);
 
+      const maxUploadBytes = config.storage.maxUploadSizeBytes;
+      const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+      if (maxUploadBytes && contentLength > maxUploadBytes) {
+        return res.status(413).json({ error: `File too large. Maximum upload size is ${maxUploadBytes} bytes.` });
+      }
+
       // 1. Path sanitization
       const targetLocalPath = resolveTenantPath(tenantId, userRequestedPath);
       await fs.promises.mkdir(path.dirname(targetLocalPath), { recursive: true });
@@ -65,8 +71,8 @@ router.all('/:tenantId/*', authenticateTenant, async (req, res) => {
 
       // 4. Background Proxy Pipe to S3 Hot Bucket via BullMQ Queue
       addS3UploadJob({ tenantId, filePath: userRequestedPath, targetLocalPath, s3Key })
-        .then((res) => {
-          if (res.status === 'FALLBACK_INLINE') {
+        .then((jobResult) => {
+          if (jobResult.status === 'FALLBACK_INLINE') {
             uploadFileToS3(s3Key, targetLocalPath, config.s3.hotBucket).catch(() => {});
           }
         })
@@ -112,7 +118,6 @@ router.all('/:tenantId/*', authenticateTenant, async (req, res) => {
 
       const redis = getRedisClient();
       const fileKey = `${tenantId}:${userRequestedPath}`;
-      let fileBuffer = null;
       let cacheState = 'CACHE_HIT';
 
       // Check local disk file
@@ -124,14 +129,9 @@ router.all('/:tenantId/*', authenticateTenant, async (req, res) => {
         localExists = false;
       }
 
-      if (localExists) {
-        // Cache Hit! Serve immediately regardless of cloud tier (~3.8ms)
-        fileBuffer = await fs.promises.readFile(targetLocalPath);
-        touchFile(redis, fileKey).catch(() => {});
-      } else {
+      if (!localExists) {
         // Cache Miss: Check Storage Tier (HOT vs COLD)
         if (metadata.currentTier === 'COLD') {
-          // Trigger Glacier Cold Storage Restore Job
           restoreGlacierObject(metadata.s3Key, config.s3.coldBucket).catch(() => {});
           return res.status(202).json({
             status: 'archived',
@@ -140,28 +140,56 @@ router.all('/:tenantId/*', authenticateTenant, async (req, res) => {
           });
         }
 
-        // Cache Miss & Tier == 'HOT': Fetch from S3 Hot Bucket
         cacheState = 'CACHE_MISS_S3_FETCH';
         console.log(`[Proxy Cache Miss] ${fileKey} missing locally. Fetching via Singleflight S3 Proxy...`);
-        fileBuffer = await singleflightExecute(fileKey, async () => {
+        await singleflightExecute(fileKey, async () => {
           const s3Data = await downloadFileFromS3(metadata.s3Key, config.s3.hotBucket);
           await fs.promises.mkdir(path.dirname(targetLocalPath), { recursive: true });
           await fs.promises.writeFile(targetLocalPath, s3Data);
           touchFile(redis, fileKey).catch(() => {});
-          return s3Data;
         });
+      } else {
+        touchFile(redis, fileKey).catch(() => {});
       }
 
-      const totalSizeBytes = fileBuffer.length;
+      const stat = await fs.promises.stat(targetLocalPath);
+      const totalSizeBytes = stat.size;
+
+      const rangeHeader = req.headers.range;
+      let start = 0;
+      let end = totalSizeBytes - 1;
+      let isRange = false;
+
+      if (rangeHeader) {
+        const match = rangeHeader.match(/bytes=(\d+)-(\d+)?/);
+        if (match) {
+          isRange = true;
+          start = parseInt(match[1], 10);
+          end = match[2] ? Math.min(parseInt(match[2], 10), totalSizeBytes - 1) : totalSizeBytes - 1;
+        }
+      }
+
+      if (start >= totalSizeBytes || start > end) {
+        return res.status(416).setHeader('Content-Range', `bytes */${totalSizeBytes}`).end();
+      }
+
+      const contentLength = end - start + 1;
 
       res.setHeader('X-Cache-Status', cacheState);
       res.setHeader('X-Storage-Proxy', 'CloudVault');
       res.setHeader('X-Storage-Tier', metadata.currentTier);
       res.setHeader('Content-Type', 'application/octet-stream');
       res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(metadata.fileName)}"`);
-      res.setHeader('Content-Length', totalSizeBytes);
+      res.setHeader('Content-Length', contentLength);
+      if (isRange) {
+        res.setHeader('Content-Range', `bytes ${start}-${end}/${totalSizeBytes}`);
+        res.status(206);
+      } else {
+        res.status(200);
+      }
 
-      return res.status(200).send(fileBuffer);
+      fs.createReadStream(targetLocalPath, { start, end }).pipe(res);
+      return;
     } catch (err) {
       if (err instanceof SecurityError) {
         return res.status(err.statusCode || 403).json({ error: err.message });
